@@ -51,27 +51,26 @@ The project is designed to grow incrementally, with a strong focus on modularity
 The codebase is deliberately modular to keep concerns separated and make iterative progress sustainable:
 
 GCRecomp/
-├── game/               # Standalone binary crate (the final game.exe/game)
+├── game/                          # Standalone binary crate (the final game.exe/game)
 │   ├── src/
-│   │   ├── main.rs
-│   │   └── recompiled.rs   # Auto-generated Rust from the recompiler
+│   │   ├── main.rs                # Entry point for the standalone game binary
+│   │   └── recompiled.rs          # Auto-generated Rust from the recompiler
 │   └── Cargo.toml
-├── src/                # Main library crate (gcrecomp)
-│   ├── recompiler/     # Parsing, decoding, code generation
+├── src/                           # Main library crate (gcrecomp)
+│   ├── recompiler/                # Parsing, decoding, code generation
 │   │   ├── parser.rs
 │   │   ├── decoder.rs
 │   │   └── codegen.rs
-│   ├── runtime/        # CPU context, memory, SDK stubs
+│   ├── runtime/                   # CPU context, memory, SDK stubs
 │   │   ├── context.rs
 │   │   └── sdk.rs
-│   ├── lib.rs
-│   └── main.rs         # CLI for testing the recompiler
-├── tests/              # Test DOLs and Ghidra exports
-├── docs/               # Architecture, game support notes, coding rules
-├── scripts/            # Automation helpers (Ghidra scripting, etc.)
-├── Cargo.toml
+│   ├── lib.rs                     # Library crate entry point
+│   └── main.rs                    # CLI for testing the recompiler
+├── tests/                         # Test DOLs and Ghidra exports
+├── docs/                          # Architecture, game support notes, coding rules
+├── scripts/                       # Automation helpers (Ghidra scripting, etc.)
+├── Cargo.toml                     # Workspace/root configuration
 └── README.md
-
 
 ## Why This Project is Cool
 
