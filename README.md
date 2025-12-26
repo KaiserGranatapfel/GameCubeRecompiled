@@ -84,4 +84,4 @@ If you're into low-level programming, game preservation, or just love seeing imp
 
 Contributions, ideas, and moral support are very welcome as this grows.
 
-**License**: MIT
+**License**: CC0 1.0 Universal
