@@ -145,7 +145,7 @@ jobs:
         run: cargo build --release --all
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.os }}
           path: target/release/
