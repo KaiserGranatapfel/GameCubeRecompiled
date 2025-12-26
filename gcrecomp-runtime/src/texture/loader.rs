@@ -1,8 +1,8 @@
 // Texture loading
+use crate::texture::cache::TextureCache;
+use crate::texture::formats::GameCubeTextureFormat;
 use anyhow::Result;
 use image::RgbaImage;
-use crate::texture::formats::GameCubeTextureFormat;
-use crate::texture::cache::TextureCache;
 
 pub struct TextureLoader {
     cache: TextureCache,
@@ -14,7 +14,7 @@ impl TextureLoader {
             cache: TextureCache::new(),
         }
     }
-    
+
     pub fn load_texture(
         &mut self,
         data: &[u8],
@@ -27,16 +27,16 @@ impl TextureLoader {
         if let Some(cached) = self.cache.get(&cache_key) {
             return Ok(cached.clone());
         }
-        
+
         // Decode texture
         let image = format.decode(data, width, height)?;
-        
+
         // Cache it
         self.cache.insert(cache_key, image.clone());
-        
+
         Ok(image)
     }
-    
+
     pub fn load_texture_with_mipmaps(
         &mut self,
         data: &[u8],
@@ -49,7 +49,7 @@ impl TextureLoader {
         let mut offset = 0;
         let mut current_width = width;
         let mut current_height = height;
-        
+
         for _ in 0..mip_count {
             let size = (current_width * current_height * format.bytes_per_pixel()) as usize;
             if offset + size <= data.len() {
@@ -61,7 +61,7 @@ impl TextureLoader {
                 current_height = (current_height / 2).max(1);
             }
         }
-        
+
         Ok(mipmaps)
     }
 }
@@ -80,4 +80,3 @@ impl GameCubeTextureFormat {
         }
     }
 }
-

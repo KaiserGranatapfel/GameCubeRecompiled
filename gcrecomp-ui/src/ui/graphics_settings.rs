@@ -1,10 +1,10 @@
 // Graphics settings
-use iced::{
-    Element, Length, Renderer, Theme,
-    widget::{Column, Container, Text, Button, Space, Row, Slider, PickList, Checkbox},
-};
 use crate::app::Message;
 use crate::config::GameConfig;
+use iced::{
+    widget::{Button, Checkbox, Column, Container, PickList, Row, Slider, Space, Text},
+    Element, Length, Renderer, Theme,
+};
 
 pub struct GraphicsSettings;
 
@@ -50,7 +50,7 @@ impl GraphicsSettings {
             .push(Text::new("Resolution:"))
             .push(
                 PickList::new(Resolution::all(), Some(Resolution::Native), |_| {})
-                    .width(Length::Fixed(300.0))
+                    .width(Length::Fixed(300.0)),
             )
             .push(Space::with_height(Length::Fixed(10.0)))
             .push(Text::new("Upscaling:"))
@@ -59,7 +59,7 @@ impl GraphicsSettings {
                     .spacing(10)
                     .push(Text::new("Factor:"))
                     .push(Slider::new(1.0..=4.0, 1.0, |_| {}).width(Length::Fixed(200.0)))
-                    .push(Text::new("1.0x"))
+                    .push(Text::new("1.0x")),
             )
             .push(Checkbox::new("Maintain Aspect Ratio", true))
             .push(Space::with_height(Length::Fixed(10.0)))
@@ -68,9 +68,9 @@ impl GraphicsSettings {
                 PickList::new(
                     vec!["Nearest", "Linear", "Anisotropic"],
                     Some("Linear"),
-                    |_| {}
+                    |_| {},
                 )
-                .width(Length::Fixed(300.0))
+                .width(Length::Fixed(300.0)),
             )
             .push(Space::with_height(Length::Fixed(10.0)))
             .push(Text::new("Anti-Aliasing:"))
@@ -78,9 +78,9 @@ impl GraphicsSettings {
                 PickList::new(
                     vec!["None", "MSAA 2x", "MSAA 4x", "FXAA"],
                     Some("None"),
-                    |_| {}
+                    |_| {},
                 )
-                .width(Length::Fixed(300.0))
+                .width(Length::Fixed(300.0)),
             )
             .push(Space::with_height(Length::Fixed(10.0)))
             .push(Text::new("Performance:"))
@@ -94,23 +94,23 @@ impl GraphicsSettings {
                         PickList::new(
                             vec!["Unlimited", "60 FPS", "30 FPS"],
                             Some("Unlimited"),
-                            |_| {}
+                            |_| {},
                         )
-                        .width(Length::Fixed(200.0))
-                    )
+                        .width(Length::Fixed(200.0)),
+                    ),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
                 Row::new()
                     .spacing(10)
                     .push(Button::new(Text::new("Apply")).width(Length::Fixed(150.0)))
-                    .push(Button::new(Text::new("Reset to Default")).width(Length::Fixed(150.0)))
+                    .push(Button::new(Text::new("Reset to Default")).width(Length::Fixed(150.0))),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
                 Button::new(Text::new("Back"))
                     .on_press(Message::CloseMenu)
-                    .width(Length::Fixed(200.0))
+                    .width(Length::Fixed(200.0)),
             );
 
         Container::new(content)

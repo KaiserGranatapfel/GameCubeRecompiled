@@ -1,10 +1,10 @@
 // Game settings
-use iced::{
-    Element, Length, Renderer, Theme,
-    widget::{Column, Container, Text, Button, Space},
-};
 use crate::app::Message;
 use crate::config::GameConfig;
+use iced::{
+    widget::{Button, Column, Container, Space, Text},
+    Element, Length, Renderer, Theme,
+};
 
 pub struct GameSettings;
 
@@ -18,10 +18,7 @@ impl GameSettings {
             .push(Text::new("Cheats/Mods"))
             .push(Text::new("(To be implemented)"))
             .push(Space::with_height(Length::Fixed(20.0)))
-            .push(
-                Button::new(Text::new("Back"))
-                    .on_press(Message::CloseMenu),
-            );
+            .push(Button::new(Text::new("Back")).on_press(Message::CloseMenu));
 
         Container::new(content)
             .width(Length::Fill)
@@ -31,4 +28,3 @@ impl GameSettings {
             .into()
     }
 }
-

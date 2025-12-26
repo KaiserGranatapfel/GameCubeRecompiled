@@ -1,10 +1,10 @@
 // Cemu-like controller mapping UI
-use iced::{
-    Element, Length, Renderer, Theme,
-    widget::{Column, Container, Text, Button, Row, Space, Slider, Checkbox},
-};
 use crate::app::Message;
 use crate::config::GameConfig;
+use iced::{
+    widget::{Button, Checkbox, Column, Container, Row, Slider, Space, Text},
+    Element, Length, Renderer, Theme,
+};
 
 pub struct ControllerConfigUI {
     selected_controller: Option<usize>,
@@ -20,7 +20,7 @@ impl ControllerConfigUI {
             test_mode: false,
         }
     }
-    
+
     pub fn view(config: &GameConfig) -> Element<'static, Message> {
         let content = Column::new()
             .spacing(20)
@@ -33,14 +33,14 @@ impl ControllerConfigUI {
                     .push(Button::new(Text::new("Controller 1")).width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Controller 2")).width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Controller 3")).width(Length::Fixed(150.0)))
-                    .push(Button::new(Text::new("Controller 4")).width(Length::Fixed(150.0)))
+                    .push(Button::new(Text::new("Controller 4")).width(Length::Fixed(150.0))),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(Text::new("Visual Controller Display"))
             .push(
                 Container::new(Text::new("Controller visualization would appear here"))
                     .width(Length::Fixed(400.0))
-                    .height(Length::Fixed(300.0))
+                    .height(Length::Fixed(300.0)),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(Text::new("Button Mapping:"))
@@ -54,7 +54,7 @@ impl ControllerConfigUI {
                     .push(create_mapping_row("Start", "Click to map"))
                     .push(create_mapping_row("L Trigger", "Click to map"))
                     .push(create_mapping_row("R Trigger", "Click to map"))
-                    .push(create_mapping_row("Z Button", "Click to map"))
+                    .push(create_mapping_row("Z Button", "Click to map")),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(Text::new("Advanced Settings:"))
@@ -65,16 +65,16 @@ impl ControllerConfigUI {
                         Row::new()
                             .spacing(10)
                             .push(Text::new("Left Stick Dead Zone:"))
-                            .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0)))
+                            .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0))),
                     )
                     .push(
                         Row::new()
                             .spacing(10)
                             .push(Text::new("Right Stick Dead Zone:"))
-                            .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0)))
+                            .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0))),
                     )
                     .push(Checkbox::new("Invert Y Axis", false))
-                    .push(Checkbox::new("Enable Vibration", true))
+                    .push(Checkbox::new("Enable Vibration", true)),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
@@ -83,13 +83,13 @@ impl ControllerConfigUI {
                     .push(Button::new(Text::new("Test Mode")).width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Save Profile")).width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Load Profile")).width(Length::Fixed(150.0)))
-                    .push(Button::new(Text::new("Reset to Default")).width(Length::Fixed(150.0)))
+                    .push(Button::new(Text::new("Reset to Default")).width(Length::Fixed(150.0))),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
                 Button::new(Text::new("Back"))
                     .on_press(Message::CloseMenu)
-                    .width(Length::Fixed(200.0))
+                    .width(Length::Fixed(200.0)),
             );
 
         Container::new(content)
@@ -107,4 +107,3 @@ fn create_mapping_row(label: &str, button_text: &str) -> Row<'static, Message> {
         .push(Text::new(label).width(Length::Fixed(100.0)))
         .push(Button::new(Text::new(button_text)).width(Length::Fixed(200.0)))
 }
-

@@ -1,6 +1,5 @@
-pub mod runtime;
-pub mod input;
 pub mod graphics;
-pub mod texture;
+pub mod input;
 pub mod memory;
-
+pub mod runtime;
+pub mod texture;

@@ -9,7 +9,7 @@ impl MemoryMapper {
     pub fn new() -> Self {
         Self {}
     }
-    
+
     pub fn translate_address(&self, virtual_addr: u32) -> Result<MemoryRegion> {
         // GameCube memory map
         match virtual_addr {
@@ -35,9 +35,8 @@ impl MemoryMapper {
 
 #[derive(Debug, Clone, Copy)]
 pub enum MemoryRegion {
-    Ram(u32),    // Physical RAM address
-    VRam(u32),   // Physical VRAM address
-    ARam(u32),   // Physical ARAM address
-    IO(u32),     // I/O register address
+    Ram(u32),  // Physical RAM address
+    VRam(u32), // Physical VRAM address
+    ARam(u32), // Physical ARAM address
+    IO(u32),   // I/O register address
 }
-

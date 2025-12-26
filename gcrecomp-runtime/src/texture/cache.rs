@@ -16,14 +16,14 @@ impl TextureCache {
             current_size: 0,
         }
     }
-    
+
     pub fn get(&self, key: &str) -> Option<&RgbaImage> {
         self.cache.get(key)
     }
-    
+
     pub fn insert(&mut self, key: String, texture: RgbaImage) {
         let size = (texture.width() * texture.height() * 4) as usize;
-        
+
         // Evict if needed (simple LRU - would need proper implementation)
         while self.current_size + size > self.max_size && !self.cache.is_empty() {
             if let Some((old_key, _)) = self.cache.iter().next() {
@@ -36,16 +36,16 @@ impl TextureCache {
                 break;
             }
         }
-        
+
         self.cache.insert(key, texture);
         self.current_size += size;
     }
-    
+
     pub fn clear(&mut self) {
         self.cache.clear();
         self.current_size = 0;
     }
-    
+
     pub fn set_max_size(&mut self, size: usize) {
         self.max_size = size;
         // Evict if over limit
@@ -62,4 +62,3 @@ impl TextureCache {
         }
     }
 }
-

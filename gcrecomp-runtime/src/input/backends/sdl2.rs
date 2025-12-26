@@ -1,7 +1,7 @@
 // SDL2 backend for cross-platform controller support
-use anyhow::{Result, Context};
+use crate::input::backends::{Backend, ControllerInfo, ControllerType, HatState, RawInput};
+use anyhow::{Context, Result};
 use sdl2::controller::GameControllerSubsystem;
-use crate::input::backends::{Backend, ControllerInfo, ControllerType, RawInput, HatState};
 use std::collections::HashMap;
 
 pub struct SDL2Backend {
@@ -13,12 +13,12 @@ pub struct SDL2Backend {
 
 impl SDL2Backend {
     pub fn new() -> Result<Self> {
-        let sdl_context = sdl2::init()
-            .context("Failed to initialize SDL2")?;
-        
-        let controller_subsystem = sdl_context.game_controller()
+        let sdl_context = sdl2::init().context("Failed to initialize SDL2")?;
+
+        let controller_subsystem = sdl_context
+            .game_controller()
             .context("Failed to initialize SDL2 game controller subsystem")?;
-        
+
         Ok(Self {
             sdl_context,
             controller_subsystem,
@@ -33,43 +33,45 @@ impl Backend for SDL2Backend {
         // SDL2 handles events automatically
         Ok(())
     }
-    
+
     fn enumerate_controllers(&self) -> Result<Vec<ControllerInfo>> {
         let mut controllers = Vec::new();
-        let num_joysticks = self.controller_subsystem.num_joysticks()
+        let num_joysticks = self
+            .controller_subsystem
+            .num_joysticks()
             .map_err(|e| anyhow::anyhow!("Failed to get joystick count: {}", e))?;
-        
+
         for i in 0..num_joysticks {
             if self.controller_subsystem.is_game_controller(i) {
                 if let Ok(name) = self.controller_subsystem.name_for_index(i) {
                     let controller_type = detect_controller_type(&name);
                     let id = i as usize;
-                    
+
                     // Try to open controller to add to our map
                     if let Ok(controller) = self.controller_subsystem.open(i) {
                         self.controllers.insert(id, controller);
                     }
-                    
+
                     controllers.push(ControllerInfo {
                         id,
                         name: name.to_string(),
                         controller_type,
                         button_count: 16, // SDL2 standard
-                        axis_count: 6, // 2 sticks + 2 triggers
+                        axis_count: 6,    // 2 sticks + 2 triggers
                     });
                 }
             }
         }
-        
+
         Ok(controllers)
     }
-    
+
     fn get_input(&self, controller_id: usize) -> Result<RawInput> {
         if let Some(controller) = self.controllers.get(&controller_id) {
             let mut buttons = Vec::new();
             let mut axes = Vec::new();
             let mut triggers = Vec::new();
-            
+
             // Read buttons - SDL2 button enum
             use sdl2::controller::Button;
             buttons.push(controller.button(Button::A));
@@ -88,18 +90,18 @@ impl Backend for SDL2Backend {
             buttons.push(controller.button(Button::DPadLeft));
             buttons.push(controller.button(Button::DPadRight));
             buttons.push(false); // Extra button slot
-            
+
             // Read axes
             use sdl2::controller::Axis;
             axes.push(controller.axis(Axis::LeftX) as f32 / 32768.0);
             axes.push(controller.axis(Axis::LeftY) as f32 / 32768.0);
             axes.push(controller.axis(Axis::RightX) as f32 / 32768.0);
             axes.push(controller.axis(Axis::RightY) as f32 / 32768.0);
-            
+
             // Read triggers
             triggers.push(controller.axis(Axis::TriggerLeft) as f32 / 32768.0);
             triggers.push(controller.axis(Axis::TriggerRight) as f32 / 32768.0);
-            
+
             Ok(RawInput {
                 buttons,
                 axes,
@@ -116,7 +118,10 @@ fn detect_controller_type(name: &str) -> ControllerType {
     let name_lower = name.to_lowercase();
     if name_lower.contains("xbox") || name_lower.contains("xinput") {
         ControllerType::Xbox
-    } else if name_lower.contains("playstation") || name_lower.contains("dualshock") || name_lower.contains("dualsense") {
+    } else if name_lower.contains("playstation")
+        || name_lower.contains("dualshock")
+        || name_lower.contains("dualsense")
+    {
         ControllerType::PlayStation
     } else if name_lower.contains("switch") || name_lower.contains("pro controller") {
         ControllerType::SwitchPro
@@ -124,4 +129,3 @@ fn detect_controller_type(name: &str) -> ControllerType {
         ControllerType::Generic
     }
 }
-

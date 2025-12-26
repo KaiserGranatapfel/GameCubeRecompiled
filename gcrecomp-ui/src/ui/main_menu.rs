@@ -1,9 +1,9 @@
 // Main menu screen
-use iced::{
-    Element, Length, Renderer, Theme,
-    widget::{Column, Container, Text, Button, Row, Space},
-};
 use crate::app::Message;
+use iced::{
+    widget::{Button, Column, Container, Row, Space, Text},
+    Element, Length, Renderer, Theme,
+};
 
 pub struct MainMenu;
 
@@ -53,4 +53,3 @@ impl MainMenu {
             .into()
     }
 }
-

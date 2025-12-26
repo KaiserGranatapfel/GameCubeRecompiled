@@ -1,17 +1,17 @@
 // GameCube texture format support
 use anyhow::Result;
-use image::{RgbaImage, DynamicImage};
+use image::{DynamicImage, RgbaImage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameCubeTextureFormat {
-    CMPR,    // Compressed (S3TC/DXT1)
-    I4,      // 4-bit intensity
-    I8,      // 8-bit intensity
-    IA4,     // 4-bit intensity + alpha
-    IA8,     // 8-bit intensity + alpha
-    RGB565,  // 16-bit RGB
-    RGB5A3,  // 16-bit RGB + alpha
-    RGBA8,   // 32-bit RGBA
+    CMPR,   // Compressed (S3TC/DXT1)
+    I4,     // 4-bit intensity
+    I8,     // 8-bit intensity
+    IA4,    // 4-bit intensity + alpha
+    IA8,    // 8-bit intensity + alpha
+    RGB565, // 16-bit RGB
+    RGB5A3, // 16-bit RGB + alpha
+    RGBA8,  // 32-bit RGBA
 }
 
 impl GameCubeTextureFormat {
@@ -28,7 +28,7 @@ impl GameCubeTextureFormat {
             _ => None,
         }
     }
-    
+
     pub fn decode(&self, data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         match self {
             Self::CMPR => Self::decode_cmpr(data, width, height),
@@ -41,7 +41,7 @@ impl GameCubeTextureFormat {
             Self::RGBA8 => Self::decode_rgba8(data, width, height),
         }
     }
-    
+
     fn decode_cmpr(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         // CMPR is DXT1/S3TC compression
         // Would need DXT decoder
@@ -49,12 +49,12 @@ impl GameCubeTextureFormat {
         // Placeholder - would decode DXT1
         Ok(image)
     }
-    
+
     fn decode_i4(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let pixels_per_byte = 2;
         let mut data_idx = 0;
-        
+
         for y in 0..height {
             for x in 0..width {
                 let byte_idx = (y * width + x) / pixels_per_byte;
@@ -66,20 +66,20 @@ impl GameCubeTextureFormat {
                     } else {
                         (byte & 0xF) * 17
                     };
-                    
+
                     image.put_pixel(x, y, image::Rgba([intensity, intensity, intensity, 255]));
                 }
                 data_idx += 1;
             }
         }
-        
+
         Ok(image)
     }
-    
+
     fn decode_i8(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let mut data_idx = 0;
-        
+
         for y in 0..height {
             for x in 0..width {
                 if data_idx < data.len() {
@@ -89,14 +89,14 @@ impl GameCubeTextureFormat {
                 }
             }
         }
-        
+
         Ok(image)
     }
-    
+
     fn decode_ia4(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let pixels_per_byte = 2;
-        
+
         for y in 0..height {
             for x in 0..width {
                 let byte_idx = ((y * width + x) / pixels_per_byte) as usize;
@@ -108,19 +108,19 @@ impl GameCubeTextureFormat {
                     } else {
                         ((byte & 0xF) * 17, ((byte >> 3) & 0x1) * 255)
                     };
-                    
+
                     image.put_pixel(x, y, image::Rgba([intensity, intensity, intensity, alpha]));
                 }
             }
         }
-        
+
         Ok(image)
     }
-    
+
     fn decode_ia8(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let mut data_idx = 0;
-        
+
         for y in 0..height {
             for x in 0..width {
                 if data_idx + 1 < data.len() {
@@ -131,14 +131,14 @@ impl GameCubeTextureFormat {
                 }
             }
         }
-        
+
         Ok(image)
     }
-    
+
     fn decode_rgb565(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let mut data_idx = 0;
-        
+
         for y in 0..height {
             for x in 0..width {
                 if data_idx + 1 < data.len() {
@@ -151,14 +151,14 @@ impl GameCubeTextureFormat {
                 }
             }
         }
-        
+
         Ok(image)
     }
-    
+
     fn decode_rgb5a3(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let mut data_idx = 0;
-        
+
         for y in 0..height {
             for x in 0..width {
                 if data_idx + 1 < data.len() {
@@ -181,14 +181,14 @@ impl GameCubeTextureFormat {
                 }
             }
         }
-        
+
         Ok(image)
     }
-    
+
     fn decode_rgba8(data: &[u8], width: u32, height: u32) -> Result<RgbaImage> {
         let mut image = RgbaImage::new(width, height);
         let mut data_idx = 0;
-        
+
         for y in 0..height {
             for x in 0..width {
                 if data_idx + 3 < data.len() {
@@ -201,8 +201,7 @@ impl GameCubeTextureFormat {
                 }
             }
         }
-        
+
         Ok(image)
     }
 }
-

@@ -1,10 +1,10 @@
 // Menu application state
-use iced::{
-    Application, Command, Element, Length, Renderer, Settings, Theme,
-    widget::{Column, Container, Text, Button, Row},
-};
 use crate::config::GameConfig;
 use crate::ui::main_menu::MainMenu;
+use iced::{
+    widget::{Button, Column, Container, Row, Text},
+    Application, Command, Element, Length, Renderer, Settings, Theme,
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -108,18 +108,12 @@ impl Application for App {
             Screen::GraphicsSettings => {
                 crate::ui::graphics_settings::GraphicsSettings::view(&self.config)
             }
-            Screen::AudioSettings => {
-                crate::ui::audio_settings::AudioSettings::view(&self.config)
-            }
-            Screen::InputSettings => {
-                crate::ui::input_settings::InputSettings::view(&self.config)
-            }
+            Screen::AudioSettings => crate::ui::audio_settings::AudioSettings::view(&self.config),
+            Screen::InputSettings => crate::ui::input_settings::InputSettings::view(&self.config),
             Screen::ControllerConfig => {
                 crate::ui::controller_config::ControllerConfigUI::view(&self.config)
             }
-            Screen::GameSettings => {
-                crate::ui::game_settings::GameSettings::view(&self.config)
-            }
+            Screen::GameSettings => crate::ui::game_settings::GameSettings::view(&self.config),
         };
 
         Container::new(content)
@@ -134,4 +128,3 @@ impl Application for App {
         Theme::Dark
     }
 }
-

@@ -1,10 +1,9 @@
-pub mod loader;
-pub mod formats;
-pub mod upscaler;
 pub mod cache;
+pub mod formats;
+pub mod loader;
 pub mod mapper;
+pub mod upscaler;
 
-pub use loader::TextureLoader;
-pub use formats::GameCubeTextureFormat;
 pub use cache::TextureCache;
-
+pub use formats::GameCubeTextureFormat;
+pub use loader::TextureLoader;

@@ -1,6 +1,6 @@
 // In-game menu UI
-use iced::{Application, Settings};
 use gcrecomp_ui::app::App;
+use iced::{Application, Settings};
 
 fn main() -> iced::Result {
     App::run(Settings {
@@ -11,4 +11,3 @@ fn main() -> iced::Result {
         ..Default::default()
     })
 }
-

@@ -1,8 +1,8 @@
 // CLI application
 use clap::Parser;
+use gcrecomp_cli::commands::{analyze_dol, build_dol, recompile_dol};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
-use gcrecomp_cli::commands::{analyze_dol, recompile_dol, build_dol};
 
 #[derive(Parser)]
 #[command(name = "gcrecomp")]
@@ -20,7 +20,7 @@ enum Commands {
         /// Path to the DOL file
         #[arg(short, long)]
         dol_file: PathBuf,
-        
+
         /// Use ReOxide backend (default: headless CLI)
         #[arg(long)]
         use_reoxide: bool,
@@ -30,11 +30,11 @@ enum Commands {
         /// Path to the DOL file
         #[arg(short, long)]
         dol_file: PathBuf,
-        
+
         /// Output directory for generated Rust code
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
-        
+
         /// Use ReOxide backend (default: headless CLI)
         #[arg(long)]
         use_reoxide: bool,
@@ -44,11 +44,11 @@ enum Commands {
         /// Path to the DOL file
         #[arg(short, long)]
         dol_file: PathBuf,
-        
+
         /// Output directory for generated Rust code
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
-        
+
         /// Use ReOxide backend (default: headless CLI)
         #[arg(long)]
         use_reoxide: bool,
@@ -57,27 +57,38 @@ enum Commands {
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    
+
     let cli = Cli::parse();
-    
+
     match cli.command {
-        Commands::Analyze { dol_file, use_reoxide } => {
+        Commands::Analyze {
+            dol_file,
+            use_reoxide,
+        } => {
             let pb = create_progress_bar("Analyzing DOL file...");
             analyze_dol(&dol_file, use_reoxide)?;
             pb.finish_with_message("Analysis complete");
         }
-        Commands::Recompile { dol_file, output_dir, use_reoxide } => {
+        Commands::Recompile {
+            dol_file,
+            output_dir,
+            use_reoxide,
+        } => {
             let pb = create_progress_bar("Recompiling DOL file...");
             recompile_dol(&dol_file, output_dir.as_deref(), use_reoxide)?;
             pb.finish_with_message("Recompilation complete");
         }
-        Commands::Build { dol_file, output_dir, use_reoxide } => {
+        Commands::Build {
+            dol_file,
+            output_dir,
+            use_reoxide,
+        } => {
             let pb = create_progress_bar("Building recompiled game...");
             build_dol(&dol_file, output_dir.as_deref(), use_reoxide)?;
             pb.finish_with_message("Build complete");
         }
     }
-    
+
     Ok(())
 }
 
@@ -92,4 +103,3 @@ fn create_progress_bar(message: &str) -> ProgressBar {
     pb.set_message(message.to_string());
     pb
 }
-

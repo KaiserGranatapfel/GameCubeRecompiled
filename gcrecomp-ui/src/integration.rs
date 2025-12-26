@@ -1,7 +1,7 @@
 // Game integration hooks
 use anyhow::Result;
-use winit::event::{Event, WindowEvent, KeyboardInput, ElementState, VirtualKeyCode};
-use winit::event_loop::{EventLoop, ControlFlow};
+use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 
 pub struct GameIntegration {
@@ -18,11 +18,12 @@ impl GameIntegration {
     pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
-                input: KeyboardInput {
-                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                    state: ElementState::Pressed,
-                    ..
-                },
+                input:
+                    KeyboardInput {
+                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        state: ElementState::Pressed,
+                        ..
+                    },
                 ..
             } => {
                 self.menu_visible = !self.menu_visible;
@@ -56,4 +57,3 @@ pub fn overlay_menu(window: &Window) -> Result<()> {
     // This function can be used for additional overlay rendering if needed
     Ok(())
 }
-

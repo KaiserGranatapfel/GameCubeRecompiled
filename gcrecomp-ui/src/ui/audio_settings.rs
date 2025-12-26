@@ -1,10 +1,10 @@
 // Audio settings
-use iced::{
-    Element, Length, Renderer, Theme,
-    widget::{Column, Container, Text, Button, Space},
-};
 use crate::app::Message;
 use crate::config::GameConfig;
+use iced::{
+    widget::{Button, Column, Container, Space, Text},
+    Element, Length, Renderer, Theme,
+};
 
 pub struct AudioSettings;
 
@@ -14,15 +14,24 @@ impl AudioSettings {
             .spacing(20)
             .push(Text::new("Audio Settings").size(32))
             .push(Space::with_height(Length::Fixed(20.0)))
-            .push(Text::new(&format!("Master Volume: {:.0}%", config.master_volume * 100.0)))
-            .push(Text::new(&format!("Music Volume: {:.0}%", config.music_volume * 100.0)))
-            .push(Text::new(&format!("SFX Volume: {:.0}%", config.sfx_volume * 100.0)))
-            .push(Text::new(&format!("Audio Backend: {}", config.audio_backend)))
+            .push(Text::new(&format!(
+                "Master Volume: {:.0}%",
+                config.master_volume * 100.0
+            )))
+            .push(Text::new(&format!(
+                "Music Volume: {:.0}%",
+                config.music_volume * 100.0
+            )))
+            .push(Text::new(&format!(
+                "SFX Volume: {:.0}%",
+                config.sfx_volume * 100.0
+            )))
+            .push(Text::new(&format!(
+                "Audio Backend: {}",
+                config.audio_backend
+            )))
             .push(Space::with_height(Length::Fixed(20.0)))
-            .push(
-                Button::new(Text::new("Back"))
-                    .on_press(Message::CloseMenu),
-            );
+            .push(Button::new(Text::new("Back")).on_press(Message::CloseMenu));
 
         Container::new(content)
             .width(Length::Fill)
@@ -32,4 +41,3 @@ impl AudioSettings {
             .into()
     }
 }
-

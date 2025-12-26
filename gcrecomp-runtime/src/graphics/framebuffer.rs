@@ -25,9 +25,9 @@ impl FrameBuffer {
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        
+
         let view = texture.create_view(&TextureViewDescriptor::default());
-        
+
         Ok(Self {
             texture,
             view,
@@ -35,21 +35,20 @@ impl FrameBuffer {
             height,
         })
     }
-    
+
     pub fn view(&self) -> &TextureView {
         &self.view
     }
-    
+
     pub fn texture(&self) -> &Texture {
         &self.texture
     }
-    
+
     pub fn width(&self) -> u32 {
         self.width
     }
-    
+
     pub fn height(&self) -> u32 {
         self.height
     }
 }
-

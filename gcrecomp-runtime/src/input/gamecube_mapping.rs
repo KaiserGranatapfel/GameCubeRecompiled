@@ -1,6 +1,6 @@
 // GameCube controller button mapping
-use crate::input::backends::{RawInput, ControllerType};
-use crate::input::controller::{GameCubeInput, GameCubeButtons};
+use crate::input::backends::{ControllerType, RawInput};
+use crate::input::controller::{GameCubeButtons, GameCubeInput};
 
 #[derive(Debug, Clone)]
 pub struct GameCubeMapping {
@@ -72,7 +72,9 @@ pub struct Sensitivity {
 }
 
 impl GameCubeMapping {
-    pub fn default_for_controller(controller_info: &crate::input::backends::ControllerInfo) -> Result<Self> {
+    pub fn default_for_controller(
+        controller_info: &crate::input::backends::ControllerInfo,
+    ) -> Result<Self> {
         match controller_info.controller_type {
             ControllerType::Xbox => Ok(Self::xbox_default()),
             ControllerType::PlayStation => Ok(Self::playstation_default()),
@@ -80,23 +82,23 @@ impl GameCubeMapping {
             _ => Ok(Self::generic_default()),
         }
     }
-    
+
     pub fn xbox_default() -> Self {
         Self {
             controller_type: ControllerType::Xbox,
             button_mappings: ButtonMappings {
-                a: ButtonMapping::Button(0), // A button
-                b: ButtonMapping::Button(1), // B button
-                x: ButtonMapping::Button(2), // X button
-                y: ButtonMapping::Button(3), // Y button
-                start: ButtonMapping::Button(6), // Menu button
-                d_up: ButtonMapping::Button(11), // D-pad up
-                d_down: ButtonMapping::Button(12), // D-pad down
-                d_left: ButtonMapping::Button(13), // D-pad left
+                a: ButtonMapping::Button(0),        // A button
+                b: ButtonMapping::Button(1),        // B button
+                x: ButtonMapping::Button(2),        // X button
+                y: ButtonMapping::Button(3),        // Y button
+                start: ButtonMapping::Button(6),    // Menu button
+                d_up: ButtonMapping::Button(11),    // D-pad up
+                d_down: ButtonMapping::Button(12),  // D-pad down
+                d_left: ButtonMapping::Button(13),  // D-pad left
                 d_right: ButtonMapping::Button(14), // D-pad right
-                l: ButtonMapping::Trigger(4, 0.3), // Left trigger
-                r: ButtonMapping::Trigger(5, 0.3), // Right trigger
-                z: ButtonMapping::Button(4), // Left bumper
+                l: ButtonMapping::Trigger(4, 0.3),  // Left trigger
+                r: ButtonMapping::Trigger(5, 0.3),  // Right trigger
+                z: ButtonMapping::Button(4),        // Left bumper
             },
             stick_mappings: StickMappings {
                 left_stick: AxisMapping {
@@ -128,7 +130,7 @@ impl GameCubeMapping {
             },
         }
     }
-    
+
     pub fn playstation_default() -> Self {
         // Similar to Xbox but with different button indices
         let mut xbox = Self::xbox_default();
@@ -136,21 +138,21 @@ impl GameCubeMapping {
         xbox.button_mappings.start = ButtonMapping::Button(9); // Options button
         xbox
     }
-    
+
     pub fn switch_pro_default() -> Self {
         let mut xbox = Self::xbox_default();
         xbox.controller_type = ControllerType::SwitchPro;
         // Switch Pro has similar layout to Xbox
         xbox
     }
-    
+
     pub fn generic_default() -> Self {
         Self::xbox_default()
     }
-    
+
     pub fn map_to_gamecube(&self, input: &RawInput) -> GameCubeInput {
         let mut buttons = GameCubeButtons::default();
-        
+
         // Map buttons
         buttons.a = self.get_button_state(&self.button_mappings.a, input);
         buttons.b = self.get_button_state(&self.button_mappings.b, input);
@@ -164,7 +166,7 @@ impl GameCubeMapping {
         buttons.l = self.get_button_state(&self.button_mappings.l, input);
         buttons.r = self.get_button_state(&self.button_mappings.r, input);
         buttons.z = self.get_button_state(&self.button_mappings.z, input);
-        
+
         // Map sticks with dead zones and sensitivity
         let left_stick = self.map_stick(
             &self.stick_mappings.left_stick,
@@ -172,27 +174,27 @@ impl GameCubeMapping {
             self.sensitivity.left_stick,
             input,
         );
-        
+
         let right_stick = self.map_stick(
             &self.stick_mappings.right_stick,
             &self.dead_zones.right_stick,
             self.sensitivity.right_stick,
             input,
         );
-        
+
         // Map triggers
         let left_trigger = self.map_trigger(
             self.trigger_mappings.left_trigger,
             self.dead_zones.left_trigger,
             input,
         );
-        
+
         let right_trigger = self.map_trigger(
             self.trigger_mappings.right_trigger,
             self.dead_zones.right_trigger,
             input,
         );
-        
+
         GameCubeInput {
             buttons,
             left_stick,
@@ -201,25 +203,25 @@ impl GameCubeMapping {
             right_trigger,
         }
     }
-    
+
     fn get_button_state(&self, mapping: &ButtonMapping, input: &RawInput) -> bool {
         match mapping {
-            ButtonMapping::Button(idx) => {
-                input.buttons.get(*idx).copied().unwrap_or(false)
-            }
+            ButtonMapping::Button(idx) => input.buttons.get(*idx).copied().unwrap_or(false),
             ButtonMapping::AxisPositive(idx) => {
                 input.axes.get(*idx).map(|&v| v > 0.5).unwrap_or(false)
             }
             ButtonMapping::AxisNegative(idx) => {
                 input.axes.get(*idx).map(|&v| v < -0.5).unwrap_or(false)
             }
-            ButtonMapping::Trigger(idx, threshold) => {
-                input.triggers.get(*idx).map(|&v| v > *threshold).unwrap_or(false)
-            }
+            ButtonMapping::Trigger(idx, threshold) => input
+                .triggers
+                .get(*idx)
+                .map(|&v| v > *threshold)
+                .unwrap_or(false),
             ButtonMapping::None => false,
         }
     }
-    
+
     fn map_stick(
         &self,
         axis_mapping: &AxisMapping,
@@ -229,29 +231,29 @@ impl GameCubeMapping {
     ) -> (f32, f32) {
         let x = input.axes.get(axis_mapping.x_axis).copied().unwrap_or(0.0);
         let y = input.axes.get(axis_mapping.y_axis).copied().unwrap_or(0.0);
-        
+
         let mut x = if axis_mapping.invert_x { -x } else { x };
         let mut y = if axis_mapping.invert_y { -y } else { y };
-        
+
         // Apply dead zone
         let magnitude = (x * x + y * y).sqrt();
         if magnitude < *dead_zone {
             return (0.0, 0.0);
         }
-        
+
         // Normalize and scale
         if magnitude > 1.0 {
             x /= magnitude;
             y /= magnitude;
         }
-        
+
         // Apply sensitivity
         x *= sensitivity;
         y *= sensitivity;
-        
+
         (x, y)
     }
-    
+
     fn map_trigger(&self, trigger_idx: usize, dead_zone: f32, input: &RawInput) -> f32 {
         let value = input.triggers.get(trigger_idx).copied().unwrap_or(0.0);
         if value < dead_zone {
@@ -264,4 +266,3 @@ impl GameCubeMapping {
 }
 
 use anyhow::Result;
-

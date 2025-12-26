@@ -11,43 +11,43 @@ pub struct SwitchProController {
 impl SwitchProController {
     pub fn new() -> Result<Self> {
         let api = HidApi::new()?;
-        
+
         // Switch Pro Controller USB vendor/product IDs
         const NINTENDO_VENDOR_ID: u16 = 0x057e;
         const PRO_CONTROLLER_PRODUCT_ID: u16 = 0x2009;
-        
+
         let device = api.open(NINTENDO_VENDOR_ID, PRO_CONTROLLER_PRODUCT_ID).ok();
-        
+
         Ok(Self {
             device,
             connected: device.is_some(),
         })
     }
-    
+
     pub fn is_connected(&self) -> bool {
         self.connected
     }
-    
+
     pub fn read_input(&mut self) -> Result<SwitchProInput> {
         if let Some(ref device) = self.device {
             let mut buf = [0u8; 64];
             let len = device.read_timeout(&mut buf, Duration::from_millis(16))?;
-            
+
             if len > 0 {
                 return Self::parse_input(&buf[..len]);
             }
         }
-        
+
         Ok(SwitchProInput::default())
     }
-    
+
     fn parse_input(data: &[u8]) -> Result<SwitchProInput> {
         if data.len() < 10 {
             return Ok(SwitchProInput::default());
         }
-        
+
         let buttons = u16::from_le_bytes([data[3], data[4]]);
-        
+
         Ok(SwitchProInput {
             a: (buttons & 0x0001) != 0,
             b: (buttons & 0x0002) != 0,
@@ -65,7 +65,7 @@ impl SwitchProController {
             right_stick_y: data[9] as f32 / 128.0 - 1.0,
         })
     }
-    
+
     pub fn set_rumble(&mut self, low_freq: u8, high_freq: u8) -> Result<()> {
         if let Some(ref device) = self.device {
             let mut buf = [0u8; 10];
@@ -96,4 +96,3 @@ pub struct SwitchProInput {
     pub right_stick_x: f32,
     pub right_stick_y: f32,
 }
-

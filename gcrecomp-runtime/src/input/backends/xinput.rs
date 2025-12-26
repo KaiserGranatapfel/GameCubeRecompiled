@@ -1,8 +1,8 @@
 // XInput backend for Windows (Xbox controllers)
 #[cfg(target_os = "windows")]
-use anyhow::Result;
+use crate::input::backends::{Backend, ControllerInfo, ControllerType, HatState, RawInput};
 #[cfg(target_os = "windows")]
-use crate::input::backends::{Backend, ControllerInfo, ControllerType, RawInput, HatState};
+use anyhow::Result;
 
 #[cfg(target_os = "windows")]
 pub struct XInputBackend {
@@ -24,10 +24,10 @@ impl Backend for XInputBackend {
         // XInput state is queried on-demand
         Ok(())
     }
-    
+
     fn enumerate_controllers(&self) -> Result<Vec<ControllerInfo>> {
         let mut controllers = Vec::new();
-        
+
         // XInput supports 4 controllers (0-3)
         for i in 0..4 {
             // Check if controller is connected
@@ -40,15 +40,15 @@ impl Backend for XInputBackend {
                 axis_count: 6,
             });
         }
-        
+
         Ok(controllers)
     }
-    
+
     fn get_input(&self, controller_id: usize) -> Result<RawInput> {
         if controller_id >= 4 {
             anyhow::bail!("Invalid XInput controller ID: {}", controller_id);
         }
-        
+
         // In a real implementation, would query XInput state
         // For now, return empty input
         Ok(RawInput {
@@ -59,4 +59,3 @@ impl Backend for XInputBackend {
         })
     }
 }
-

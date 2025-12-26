@@ -14,15 +14,15 @@ impl Upscaler {
             maintain_aspect: true,
         })
     }
-    
+
     pub fn set_factor(&mut self, factor: f32) {
         self.upscale_factor = factor;
     }
-    
+
     pub fn set_maintain_aspect(&mut self, maintain: bool) {
         self.maintain_aspect = maintain;
     }
-    
+
     pub fn calculate_target_resolution(&self, native: (u32, u32)) -> (u32, u32) {
         if self.maintain_aspect {
             let aspect = native.0 as f32 / native.1 as f32;
@@ -36,11 +36,11 @@ impl Upscaler {
             )
         }
     }
-    
+
     pub fn integer_upscale(&self, native: (u32, u32), factor: u32) -> (u32, u32) {
         (native.0 * factor, native.1 * factor)
     }
-    
+
     pub fn fractional_upscale(&self, native: (u32, u32), factor: f32) -> (u32, u32) {
         (
             (native.0 as f32 * factor) as u32,
@@ -48,4 +48,3 @@ impl Upscaler {
         )
     }
 }
-

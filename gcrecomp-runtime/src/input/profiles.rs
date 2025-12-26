@@ -1,7 +1,7 @@
 // Controller profile management
-use serde::{Deserialize, Serialize};
 use crate::input::gamecube_mapping::GameCubeMapping;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControllerProfile {
@@ -41,7 +41,7 @@ impl ControllerProfile {
             },
         }
     }
-    
+
     pub fn to_gamecube_mapping(&self) -> Result<GameCubeMapping> {
         // Convert serialized format back to mapping
         // For now, return default based on controller type
@@ -52,17 +52,16 @@ impl ControllerProfile {
             _ => Ok(GameCubeMapping::generic_default()),
         }
     }
-    
+
     pub fn save_to_file(&self, path: &std::path::Path) -> Result<()> {
         let json = serde_json::to_string_pretty(self)?;
         std::fs::write(path, json)?;
         Ok(())
     }
-    
+
     pub fn load_from_file(path: &std::path::Path) -> Result<Self> {
         let json = std::fs::read_to_string(path)?;
         let profile: ControllerProfile = serde_json::from_str(&json)?;
         Ok(profile)
     }
 }
-

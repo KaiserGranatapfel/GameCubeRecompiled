@@ -51,10 +51,9 @@ impl GameConfig {
     pub fn load() -> Result<Self> {
         let path = Self::config_path();
         if path.exists() {
-            let content = std::fs::read_to_string(&path)
-                .context("Failed to read config file")?;
-            let config: GameConfig = serde_json::from_str(&content)
-                .context("Failed to parse config file")?;
+            let content = std::fs::read_to_string(&path).context("Failed to read config file")?;
+            let config: GameConfig =
+                serde_json::from_str(&content).context("Failed to parse config file")?;
             Ok(config)
         } else {
             Ok(Self::default())
@@ -64,14 +63,10 @@ impl GameConfig {
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create config directory")?;
+            std::fs::create_dir_all(parent).context("Failed to create config directory")?;
         }
-        let content = serde_json::to_string_pretty(self)
-            .context("Failed to serialize config")?;
-        std::fs::write(&path, content)
-            .context("Failed to write config file")?;
+        let content = serde_json::to_string_pretty(self).context("Failed to serialize config")?;
+        std::fs::write(&path, content).context("Failed to write config file")?;
         Ok(())
     }
 }
-

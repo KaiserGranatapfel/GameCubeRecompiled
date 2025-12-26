@@ -14,7 +14,7 @@ impl VRam {
             size: VRAM_SIZE,
         }
     }
-    
+
     pub fn read_u32(&self, address: u32) -> Result<u32> {
         let addr = (address & 0x001FFFFF) as usize; // 21-bit addressing
         if addr + 4 <= self.size {
@@ -28,7 +28,7 @@ impl VRam {
             anyhow::bail!("VRAM read out of bounds: 0x{:08X}", address);
         }
     }
-    
+
     pub fn write_u32(&mut self, address: u32, value: u32) -> Result<()> {
         let addr = (address & 0x001FFFFF) as usize;
         if addr + 4 <= self.size {
@@ -39,7 +39,7 @@ impl VRam {
             anyhow::bail!("VRAM write out of bounds: 0x{:08X}", address);
         }
     }
-    
+
     pub fn read_bytes(&self, address: u32, len: usize) -> Result<Vec<u8>> {
         let addr = (address & 0x001FFFFF) as usize;
         if addr + len <= self.size {
@@ -48,15 +48,18 @@ impl VRam {
             anyhow::bail!("VRAM read out of bounds: 0x{:08X} len {}", address, len);
         }
     }
-    
+
     pub fn write_bytes(&mut self, address: u32, data: &[u8]) -> Result<()> {
         let addr = (address & 0x001FFFFF) as usize;
         if addr + data.len() <= self.size {
             self.data[addr..addr + data.len()].copy_from_slice(data);
             Ok(())
         } else {
-            anyhow::bail!("VRAM write out of bounds: 0x{:08X} len {}", address, data.len());
+            anyhow::bail!(
+                "VRAM write out of bounds: 0x{:08X} len {}",
+                address,
+                data.len()
+            );
         }
     }
 }
-

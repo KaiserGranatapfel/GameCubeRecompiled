@@ -1,7 +1,7 @@
 // DMA (Direct Memory Access) system
 use anyhow::Result;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub struct DmaSystem {
     channels: Vec<DmaChannel>,
@@ -18,16 +18,18 @@ pub struct DmaChannel {
 impl DmaSystem {
     pub fn new() -> Self {
         Self {
-            channels: (0..4).map(|_| DmaChannel {
-                active: Arc::new(AtomicBool::new(false)),
-                source: 0,
-                destination: 0,
-                length: 0,
-                callback: None,
-            }).collect(),
+            channels: (0..4)
+                .map(|_| DmaChannel {
+                    active: Arc::new(AtomicBool::new(false)),
+                    source: 0,
+                    destination: 0,
+                    length: 0,
+                    callback: None,
+                })
+                .collect(),
         }
     }
-    
+
     pub fn start_transfer(
         &mut self,
         channel: usize,
@@ -38,16 +40,16 @@ impl DmaSystem {
         if channel >= self.channels.len() {
             anyhow::bail!("Invalid DMA channel: {}", channel);
         }
-        
+
         let ch = &mut self.channels[channel];
         ch.source = source;
         ch.destination = destination;
         ch.length = length;
         ch.active.store(true, Ordering::SeqCst);
-        
+
         Ok(())
     }
-    
+
     pub fn is_active(&self, channel: usize) -> bool {
         if channel < self.channels.len() {
             self.channels[channel].active.load(Ordering::SeqCst)
@@ -55,7 +57,7 @@ impl DmaSystem {
             false
         }
     }
-    
+
     pub fn complete_transfer(&mut self, channel: usize) {
         if channel < self.channels.len() {
             self.channels[channel].active.store(false, Ordering::SeqCst);
@@ -71,4 +73,3 @@ impl DmaChannel {
         self.callback = Some(Box::new(callback));
     }
 }
-

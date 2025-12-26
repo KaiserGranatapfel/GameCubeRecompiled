@@ -47,7 +47,7 @@ impl Ram {
             data: vec![0u8; RAM_SIZE],
         }
     }
-    
+
     /// Read a single byte from RAM.
     ///
     /// # Arguments
@@ -72,7 +72,7 @@ impl Ram {
             anyhow::bail!("RAM read out of bounds: 0x{:08X}", address);
         }
     }
-    
+
     /// Read a 16-bit word (big-endian) from RAM.
     ///
     /// # Arguments
@@ -94,7 +94,7 @@ impl Ram {
         let high: u8 = self.read_u8(address.wrapping_add(1u32))?;
         Ok(u16::from_be_bytes([high, low]))
     }
-    
+
     /// Read a 32-bit word (big-endian) from RAM.
     ///
     /// # Arguments
@@ -120,7 +120,7 @@ impl Ram {
         ];
         Ok(u32::from_be_bytes(bytes))
     }
-    
+
     /// Write a single byte to RAM.
     ///
     /// # Arguments
@@ -147,7 +147,7 @@ impl Ram {
             anyhow::bail!("RAM write out of bounds: 0x{:08X}", address);
         }
     }
-    
+
     /// Write a 16-bit word (big-endian) to RAM.
     ///
     /// # Arguments
@@ -171,7 +171,7 @@ impl Ram {
         self.write_u8(address.wrapping_add(1u32), bytes[1])?;
         Ok(())
     }
-    
+
     /// Write a 32-bit word (big-endian) to RAM.
     ///
     /// # Arguments
@@ -197,7 +197,7 @@ impl Ram {
         self.write_u8(address.wrapping_add(3u32), bytes[3])?;
         Ok(())
     }
-    
+
     /// Read multiple bytes from RAM.
     ///
     /// # Arguments
@@ -223,7 +223,7 @@ impl Ram {
             anyhow::bail!("RAM read out of bounds: 0x{:08X} len {}", address, len);
         }
     }
-    
+
     /// Write multiple bytes to RAM.
     ///
     /// # Arguments
@@ -247,7 +247,11 @@ impl Ram {
             self.data[addr..addr.wrapping_add(data.len())].copy_from_slice(data);
             Ok(())
         } else {
-            anyhow::bail!("RAM write out of bounds: 0x{:08X} len {}", address, data.len());
+            anyhow::bail!(
+                "RAM write out of bounds: 0x{:08X} len {}",
+                address,
+                data.len()
+            );
         }
     }
 }

@@ -1,10 +1,10 @@
-pub mod sdl2;
 pub mod gilrs;
+pub mod sdl2;
 #[cfg(target_os = "windows")]
 pub mod xinput;
 
-use anyhow::Result;
 use crate::input::controller::GameCubeInput;
+use anyhow::Result;
 
 pub trait Backend: Send + Sync {
     fn update(&mut self) -> Result<()>;
@@ -45,4 +45,3 @@ pub struct HatState {
     pub left: bool,
     pub right: bool,
 }
-
