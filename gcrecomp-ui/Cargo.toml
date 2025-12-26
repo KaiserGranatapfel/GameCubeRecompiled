@@ -1,0 +1,19 @@
+[package]
+name = "gcrecomp-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+gcrecomp-core = { path = "../gcrecomp-core" }
+gcrecomp-runtime = { path = "../gcrecomp-runtime" }
+iced = { workspace = true }
+winit = { workspace = true }
+wgpu = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+dirs = "5.0"
+

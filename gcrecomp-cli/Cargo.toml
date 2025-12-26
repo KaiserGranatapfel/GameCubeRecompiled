@@ -1,0 +1,19 @@
+[package]
+name = "gcrecomp-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "gcrecomp"
+path = "src/main.rs"
+
+[dependencies]
+gcrecomp-core = { path = "../gcrecomp-core" }
+clap = { workspace = true }
+indicatif = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+

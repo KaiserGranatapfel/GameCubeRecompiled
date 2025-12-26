@@ -1,0 +1,21 @@
+[package]
+name = "gcrecomp-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+log = { workspace = true }
+wgpu = { workspace = true }
+minifb = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gilrs = "0.10"
+sdl2 = "0.37"
+hidapi = "2.0"
+image = "0.24"
+imageproc = "0.23"
+bytemuck = "1.14"
+

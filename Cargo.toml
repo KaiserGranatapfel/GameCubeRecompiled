@@ -1,0 +1,55 @@
+[workspace]
+members = [
+    "gcrecomp-core",
+    "gcrecomp-cli",
+    "gcrecomp-ui",
+    "gcrecomp-runtime",
+    "game",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["GCRecomp Contributors"]
+license = "CC0-1.0"
+repository = "https://github.com/yourusername/GCRecomp"
+homepage = "https://github.com/yourusername/GCRecomp"
+documentation = "https://docs.rs/gcrecomp-core"
+keywords = ["gamecube", "recompiler", "powerpc", "rust", "emulation", "preservation"]
+categories = ["development-tools", "emulators", "system"]
+description = "Production-ready static recompiler for GameCube games to Rust"
+
+[workspace.dependencies]
+# Core dependencies
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Binary parsing
+goblin = "0.8"
+
+# CLI dependencies
+clap = { version = "4.5", features = ["derive"] }
+indicatif = "0.17"
+
+# UI dependencies
+iced = "0.12"
+winit = "0.30"
+wgpu = "0.20"
+
+# Runtime dependencies
+minifb = "0.25"
+
+# Memory optimization dependencies
+smallvec = "1.13"
+bitvec = "1.0"
+

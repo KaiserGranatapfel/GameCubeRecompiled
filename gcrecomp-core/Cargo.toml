@@ -1,0 +1,20 @@
+[package]
+name = "gcrecomp-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+goblin = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+smallvec = { workspace = true }
+bitvec = { workspace = true }
+which = "5.0"
+
+[dev-dependencies]
+

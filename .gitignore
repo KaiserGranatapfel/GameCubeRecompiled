@@ -1,0 +1,20 @@
+# Rust
+target/
+Cargo.lock
+
+# Generated files
+game/src/recompiled.rs
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config
+*.toml.bak
+
