@@ -51,11 +51,13 @@ impl Backend for XInputBackend {
 
         // In a real implementation, would query XInput state
         // For now, return empty input
+        // XInput doesn't support gyro
         Ok(RawInput {
             buttons: vec![false; 10],
             axes: vec![0.0; 6],
             triggers: vec![0.0; 2],
             hat: None,
+            gyro: None,
         })
     }
 }

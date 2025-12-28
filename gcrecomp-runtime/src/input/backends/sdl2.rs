@@ -1,5 +1,6 @@
 // SDL2 backend for cross-platform controller support
 use crate::input::backends::{Backend, ControllerInfo, ControllerType, HatState, RawInput};
+use crate::input::gyro::{GyroData, dps_to_radps, g_to_ms2};
 use anyhow::{Context, Result};
 use sdl2::controller::GameControllerSubsystem;
 use std::collections::HashMap;
@@ -102,15 +103,28 @@ impl Backend for SDL2Backend {
             triggers.push(controller.axis(Axis::TriggerLeft) as f32 / 32768.0);
             triggers.push(controller.axis(Axis::TriggerRight) as f32 / 32768.0);
 
+            // Try to read gyro data if available
+            let gyro = Self::read_gyro_data(controller);
+
             Ok(RawInput {
                 buttons,
                 axes,
                 triggers,
                 hat: None,
+                gyro,
             })
         } else {
             anyhow::bail!("Controller not found: {}", controller_id);
         }
+    }
+}
+
+    /// Read gyro data from SDL2 controller if available
+    fn read_gyro_data(controller: &sdl2::controller::GameController) -> Option<GyroData> {
+        // SDL2 doesn't have direct gyro API in the controller subsystem
+        // This would need to be implemented via sensor subsystem if available
+        // For now, return None - can be extended later
+        None
     }
 }
 

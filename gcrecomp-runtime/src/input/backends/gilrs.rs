@@ -67,11 +67,14 @@ impl Backend for GilrsBackend {
                 }
             }
 
+            // Gilrs doesn't have direct gyro support
+            // Return None for now
             Ok(RawInput {
                 buttons,
                 axes,
                 triggers,
                 hat: None,
+                gyro: None,
             })
         } else {
             anyhow::bail!("Controller not found: {}", controller_id);

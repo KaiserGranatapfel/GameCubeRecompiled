@@ -111,6 +111,139 @@ impl CodeValidator {
         Ok(())
     }
     
+    /// Validate control flow graph structure
+    pub fn validate_cfg(cfg: &crate::recompiler::analysis::control_flow::ControlFlowGraph) -> Result<()> {
+        use crate::recompiler::analysis::control_flow::ControlFlowGraph;
+        
+        // Check that entry block exists
+        if cfg.entry_block >= cfg.nodes.len() {
+            anyhow::bail!("CFG entry block index {} is out of bounds ({} nodes)", 
+                         cfg.entry_block, cfg.nodes.len());
+        }
+        
+        // Validate edges reference valid nodes
+        for edge in &cfg.edges {
+            if edge.from >= cfg.nodes.len() {
+                anyhow::bail!("CFG edge from node {} is out of bounds ({} nodes)", 
+                             edge.from, cfg.nodes.len());
+            }
+            if edge.to >= cfg.nodes.len() {
+                anyhow::bail!("CFG edge to node {} is out of bounds ({} nodes)", 
+                             edge.to, cfg.nodes.len());
+            }
+        }
+        
+        // Check for unreachable nodes (warn, not error)
+        let mut reachable = vec![false; cfg.nodes.len()];
+        Self::mark_reachable(cfg, cfg.entry_block, &mut reachable);
+        
+        let unreachable_count = reachable.iter().filter(|&&r| !r).count();
+        if unreachable_count > 0 {
+            log::warn!("CFG has {} unreachable nodes (may indicate dead code)", unreachable_count);
+        }
+        
+        Ok(())
+    }
+    
+    /// Mark reachable nodes from entry
+    fn mark_reachable(
+        cfg: &crate::recompiler::analysis::control_flow::ControlFlowGraph,
+        node_idx: usize,
+        reachable: &mut [bool],
+    ) {
+        if reachable[node_idx] {
+            return; // Already visited
+        }
+        
+        reachable[node_idx] = true;
+        
+        // Mark all successors
+        for edge in &cfg.edges {
+            if edge.from == node_idx {
+                Self::mark_reachable(cfg, edge.to, reachable);
+            }
+        }
+    }
+    
+    /// Validate register usage
+    pub fn validate_register_usage(
+        instructions: &[crate::recompiler::decoder::DecodedInstruction],
+    ) -> Result<()> {
+        for inst in instructions {
+            for operand in &inst.instruction.operands {
+                match operand {
+                    crate::recompiler::decoder::Operand::Register(r) |
+                    crate::recompiler::decoder::Operand::FpRegister(r) => {
+                        if *r > 31 {
+                            anyhow::bail!(
+                                "Invalid register {} at address 0x{:08X} (must be 0-31)",
+                                r, inst.address
+                            );
+                        }
+                    }
+                    crate::recompiler::decoder::Operand::Condition(c) => {
+                        if *c > 7 {
+                            anyhow::bail!(
+                                "Invalid condition register field {} at address 0x{:08X} (must be 0-7)",
+                                c, inst.address
+                            );
+                        }
+                    }
+                    crate::recompiler::decoder::Operand::ShiftAmount(s) => {
+                        if *s > 31 {
+                            anyhow::bail!(
+                                "Invalid shift amount {} at address 0x{:08X} (must be 0-31)",
+                                s, inst.address
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+    
+    /// Validate memory access addresses
+    pub fn validate_memory_accesses(
+        instructions: &[crate::recompiler::decoder::DecodedInstruction],
+    ) -> Result<()> {
+        for inst in instructions {
+            match inst.instruction.instruction_type {
+                crate::recompiler::decoder::InstructionType::Load |
+                crate::recompiler::decoder::InstructionType::Store => {
+                    // Check if address operand is reasonable
+                    for operand in &inst.instruction.operands {
+                        if let crate::recompiler::decoder::Operand::Address(addr) = operand {
+                            // Validate address is in reasonable range
+                            if *addr > 0xFFFFFFFF {
+                                anyhow::bail!(
+                                    "Invalid memory address 0x{:08X} at instruction 0x{:08X}",
+                                    addr, inst.address
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    
+    /// Validate type consistency
+    pub fn validate_types(
+        _instructions: &[crate::recompiler::decoder::DecodedInstruction],
+        _register_types: &std::collections::HashMap<u8, crate::recompiler::analysis::TypeInfo>,
+    ) -> Result<()> {
+        // Type validation would check:
+        // - Register types are consistent across uses
+        // - Operations match operand types
+        // - Type conversions are valid
+        // This is a placeholder for future implementation
+        Ok(())
+    }
+    
     /// Validate a single function's code.
     ///
     /// # Arguments

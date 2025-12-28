@@ -18,8 +18,161 @@
 //! # Address Translation
 //! GameCube uses physical addresses directly. Main RAM is mapped at 0x80000000,
 //! so we subtract this base address to get the RAM offset.
+//!
+//! # API Reference
+//!
+//! ## MemoryManager
+//!
+//! Manages GameCube memory operations.
+//!
+//! ```rust,no_run
+//! use gcrecomp_core::runtime::memory::MemoryManager;
+//!
+//! let mut memory = MemoryManager::new();
+//! memory.write_u32(0x80000000, 0x12345678)?;
+//! let value = memory.read_u32(0x80000000)?;
+//! ```
+//!
+//! ## Methods
+//!
+//! - `read_u8()`, `read_u16()`, `read_u32()`, `read_u64()`: Read values from memory
+//! - `write_u8()`, `write_u16()`, `write_u32()`, `write_u64()`: Write values to memory
+//! - `read_bytes()`, `write_bytes()`: Bulk read/write operations
+//! - `bulk_copy()`: Optimized memory copy
+//! - `load_section()`: Load section data into memory
 
 use anyhow::{Context, Result};
+use std::collections::HashMap;
+
+/// Arena allocator for GameCube memory management.
+///
+/// GameCube uses two memory arenas:
+/// - Low arena: 0x80000000 - 0x80FFFFFF (16MB)
+/// - High arena: 0x81700000 - 0x817FFFFF (1MB, grows downward)
+///
+/// The allocator uses a simple free list for memory management.
+#[derive(Debug)]
+pub struct ArenaAllocator {
+    /// Low arena base address
+    low_base: u32,
+    /// Low arena size
+    low_size: u32,
+    /// Low arena current pointer (grows upward)
+    low_ptr: u32,
+    /// High arena base address
+    high_base: u32,
+    /// High arena size
+    high_size: u32,
+    /// High arena current pointer (grows downward)
+    high_ptr: u32,
+    /// Track allocations for debugging (address -> size)
+    allocations: HashMap<u32, u32>,
+}
+
+impl ArenaAllocator {
+    /// Create a new arena allocator.
+    ///
+    /// # Arena Layout
+    /// - Low arena: 0x80000000 - 0x80FFFFFF (16MB)
+    /// - High arena: 0x81700000 - 0x817FFFFF (1MB)
+    pub fn new() -> Self {
+        Self {
+            low_base: 0x80000000,
+            low_size: 16 * 1024 * 1024, // 16MB
+            low_ptr: 0x80000000,
+            high_base: 0x81700000,
+            high_size: 1024 * 1024, // 1MB
+            high_ptr: 0x81800000, // Start at top, grow downward
+            allocations: HashMap::new(),
+        }
+    }
+
+    /// Allocate memory from the low arena.
+    ///
+    /// # Arguments
+    /// * `size` - Size in bytes to allocate
+    ///
+    /// # Returns
+    /// `Option<u32>` - Allocated address, or None if out of memory
+    pub fn alloc_low(&mut self, size: u32) -> Option<u32> {
+        // Align to 32 bytes (GameCube alignment requirement)
+        let aligned_size = (size + 31) & !31;
+        let end = self.low_ptr.wrapping_add(aligned_size);
+
+        if end > self.low_base.wrapping_add(self.low_size) {
+            return None; // Out of memory
+        }
+
+        let addr = self.low_ptr;
+        self.low_ptr = end;
+        self.allocations.insert(addr, aligned_size);
+        Some(addr)
+    }
+
+    /// Allocate memory from the high arena.
+    ///
+    /// # Arguments
+    /// * `size` - Size in bytes to allocate
+    ///
+    /// # Returns
+    /// `Option<u32>` - Allocated address, or None if out of memory
+    pub fn alloc_high(&mut self, size: u32) -> Option<u32> {
+        // Align to 32 bytes
+        let aligned_size = (size + 31) & !31;
+        let start = self.high_ptr.wrapping_sub(aligned_size);
+
+        if start < self.high_base {
+            return None; // Out of memory
+        }
+
+        self.high_ptr = start;
+        self.allocations.insert(start, aligned_size);
+        Some(start)
+    }
+
+    /// Free memory from the low arena.
+    ///
+    /// # Arguments
+    /// * `ptr` - Pointer to free
+    /// * `size` - Size that was allocated
+    ///
+    /// # Note
+    /// GameCube arena allocators don't actually free memory,
+    /// but we track it for debugging purposes.
+    pub fn free_low(&mut self, ptr: u32, _size: u32) {
+        self.allocations.remove(&ptr);
+        // In a real GameCube, freeing doesn't reclaim memory
+        // The arena pointer doesn't move backward
+    }
+
+    /// Free memory from the high arena.
+    ///
+    /// # Arguments
+    /// * `ptr` - Pointer to free
+    /// * `size` - Size that was allocated
+    pub fn free_high(&mut self, ptr: u32, _size: u32) {
+        self.allocations.remove(&ptr);
+        // In a real GameCube, freeing doesn't reclaim memory
+    }
+
+    /// Get allocation info for debugging.
+    pub fn get_allocation_info(&self, ptr: u32) -> Option<u32> {
+        self.allocations.get(&ptr).copied()
+    }
+
+    /// Reset the allocator (for testing/debugging).
+    pub fn reset(&mut self) {
+        self.low_ptr = self.low_base;
+        self.high_ptr = self.high_base.wrapping_add(self.high_size);
+        self.allocations.clear();
+    }
+}
+
+impl Default for ArenaAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Memory manager for GameCube memory operations.
 ///
@@ -33,6 +186,8 @@ use anyhow::{Context, Result};
 pub struct MemoryManager {
     /// Main RAM (24MB)
     ram: Vec<u8>,
+    /// Arena allocator for SDK memory allocation
+    arena: ArenaAllocator,
 }
 
 impl MemoryManager {
@@ -51,7 +206,18 @@ impl MemoryManager {
         const RAM_SIZE: usize = 24usize * 1024usize * 1024usize; // 24MB
         Self {
             ram: vec![0u8; RAM_SIZE],
+            arena: ArenaAllocator::new(),
         }
+    }
+
+    /// Get mutable reference to arena allocator.
+    pub fn arena_mut(&mut self) -> &mut ArenaAllocator {
+        &mut self.arena
+    }
+
+    /// Get reference to arena allocator.
+    pub fn arena(&self) -> &ArenaAllocator {
+        &self.arena
     }
 
     /// Translate a virtual address to a physical RAM offset.
@@ -416,15 +582,19 @@ impl MemoryManager {
     /// ```
     #[inline] // May be inlined for small lengths
     pub fn bulk_copy(&mut self, dest: u32, src: u32, len: usize) -> Result<()> {
-        let dest_offset: usize = self.translate_address(dest)
+        let dest_offset: usize = self
+            .translate_address(dest)
             .context("Invalid destination address")?;
-        let src_offset: usize = self.translate_address(src)
+        let src_offset: usize = self
+            .translate_address(src)
             .context("Invalid source address")?;
-        
-        if dest_offset.wrapping_add(len) > self.ram.len() || src_offset.wrapping_add(len) > self.ram.len() {
+
+        if dest_offset.wrapping_add(len) > self.ram.len()
+            || src_offset.wrapping_add(len) > self.ram.len()
+        {
             anyhow::bail!("Bulk copy out of bounds");
         }
-        
+
         // Use optimized copy if ranges don't overlap
         if dest_offset < src_offset || dest_offset >= src_offset.wrapping_add(len) {
             self.ram[dest_offset..dest_offset.wrapping_add(len)]
@@ -434,7 +604,7 @@ impl MemoryManager {
             let temp: Vec<u8> = self.ram[src_offset..src_offset.wrapping_add(len)].to_vec();
             self.ram[dest_offset..dest_offset.wrapping_add(len)].copy_from_slice(&temp);
         }
-        
+
         Ok(())
     }
 
@@ -460,7 +630,8 @@ impl MemoryManager {
     /// ```
     #[inline] // May be inlined for small lengths
     pub fn get_slice(&self, address: u32, len: usize) -> Result<&[u8]> {
-        let offset: usize = self.translate_address(address)
+        let offset: usize = self
+            .translate_address(address)
             .context("Invalid memory address")?;
         if offset.wrapping_add(len) > self.ram.len() {
             anyhow::bail!("Memory slice out of bounds");

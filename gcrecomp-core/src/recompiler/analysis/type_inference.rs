@@ -13,13 +13,41 @@
 //! - **Static analysis**: Infer types from operations (e.g., FP operations → float types)
 //! - **External metadata**: Use Ghidra type information when available
 //! - **Constraint solving**: Unify types across def-use chains
+//! - **Pointer analysis**: Track pointer types through points-to analysis
+//! - **Struct detection**: Infer struct layouts from memory access patterns
 //!
 //! # Type System
 //! The type system supports:
 //! - Integers (signed/unsigned, 8/16/32/64-bit)
 //! - Floating-point (32/64-bit)
 //! - Pointers (to any type)
+//! - Structs (with inferred field layouts)
 //! - Unknown (when type cannot be determined)
+//!
+//! # API Reference
+//!
+//! ## TypeInferenceEngine
+//!
+//! Main type inference engine.
+//!
+//! ```rust,no_run
+//! use gcrecomp_core::recompiler::analysis::type_inference::TypeInferenceEngine;
+//!
+//! let types = TypeInferenceEngine::infer_types(&instructions, &metadata);
+//! ```
+//!
+//! ## InferredType
+//!
+//! Represents an inferred type for a register or variable.
+//!
+//! ```rust,no_run
+//! pub enum InferredType {
+//!     Integer { signed: bool, size: u8 },
+//!     Float { size: u8 },
+//!     Pointer { pointee: Box<InferredType> },
+//!     Unknown,
+//! }
+//! ```
 
 use crate::recompiler::analysis::FunctionMetadata;
 use crate::recompiler::decoder::{DecodedInstruction, Operand};
@@ -86,22 +114,22 @@ impl TypeInferenceEngine {
         metadata: &FunctionMetadata,
     ) -> HashMap<u8, InferredType> {
         let mut register_types: HashMap<u8, InferredType> = HashMap::new();
-        
+
         // Use Ghidra type information if available
         for param in metadata.parameters.iter() {
             if let Some(reg) = param.register {
                 register_types.insert(reg, Self::type_from_string(&param.type_info));
             }
         }
-        
+
         // Infer types from operations
         for inst in instructions.iter() {
             Self::infer_from_instruction(inst, &mut register_types);
         }
-        
+
         register_types
     }
-    
+
     /// Convert type information from string representation to InferredType.
     ///
     /// # Arguments
@@ -113,17 +141,18 @@ impl TypeInferenceEngine {
     fn type_from_string(ty: &crate::recompiler::analysis::TypeInfo) -> InferredType {
         match ty {
             crate::recompiler::analysis::TypeInfo::Integer { signed, size } => {
-                InferredType::Integer { signed: *signed, size: *size }
-            }
-            crate::recompiler::analysis::TypeInfo::Pointer { pointee } => {
-                InferredType::Pointer {
-                    pointee: Box::new(Self::type_from_string(pointee)),
+                InferredType::Integer {
+                    signed: *signed,
+                    size: *size,
                 }
             }
+            crate::recompiler::analysis::TypeInfo::Pointer { pointee } => InferredType::Pointer {
+                pointee: Box::new(Self::type_from_string(pointee)),
+            },
             _ => InferredType::Unknown,
         }
     }
-    
+
     /// Infer type from a single instruction.
     ///
     /// # Algorithm
@@ -150,13 +179,25 @@ impl TypeInferenceEngine {
             crate::recompiler::decoder::InstructionType::Load => {
                 // Loads produce integers (or could be pointers)
                 if let Some(Operand::Register(rt)) = inst.instruction.operands.first() {
-                    register_types.insert(*rt, InferredType::Integer { signed: false, size: 32u8 });
+                    register_types.insert(
+                        *rt,
+                        InferredType::Integer {
+                            signed: false,
+                            size: 32u8,
+                        },
+                    );
                 }
             }
             crate::recompiler::decoder::InstructionType::Arithmetic => {
                 // Arithmetic operations produce integers
                 if let Some(Operand::Register(rt)) = inst.instruction.operands.first() {
-                    register_types.insert(*rt, InferredType::Integer { signed: true, size: 32u8 });
+                    register_types.insert(
+                        *rt,
+                        InferredType::Integer {
+                            signed: true,
+                            size: 32u8,
+                        },
+                    );
                 }
             }
             _ => {}

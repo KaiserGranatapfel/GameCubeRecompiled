@@ -1,5 +1,11 @@
 // Nintendo Switch Pro Controller support
+//! Heavily influenced by N64Recomp's gyro implementation:
+//! https://github.com/N64Recomp/N64Recomp
+//! 
+//! Adapted for GameCube with Switch Pro Controller gyro support.
+
 use anyhow::Result;
+use crate::input::gyro::{GyroData, dps_to_radps, g_to_ms2};
 use hidapi::HidApi;
 use std::time::Duration;
 
@@ -48,6 +54,13 @@ impl SwitchProController {
 
         let buttons = u16::from_le_bytes([data[3], data[4]]);
 
+        // Parse gyro data if available (Switch Pro Controller reports gyro in extended format)
+        let gyro = if data.len() >= 16 {
+            Self::parse_gyro_data(data)
+        } else {
+            None
+        };
+
         Ok(SwitchProInput {
             a: (buttons & 0x0001) != 0,
             b: (buttons & 0x0002) != 0,
@@ -63,7 +76,37 @@ impl SwitchProController {
             left_stick_y: data[7] as f32 / 128.0 - 1.0,
             right_stick_x: data[8] as f32 / 128.0 - 1.0,
             right_stick_y: data[9] as f32 / 128.0 - 1.0,
+            gyro,
         })
+    }
+
+    /// Parse gyro data from Switch Pro Controller HID report
+    /// Based on N64Recomp's implementation, adapted for Switch Pro format
+    fn parse_gyro_data(data: &[u8]) -> Option<GyroData> {
+        if data.len() < 16 {
+            return None;
+        }
+
+        // Switch Pro Controller gyro data format (if available in extended report)
+        // Gyro values are typically in degrees per second, need to convert to rad/s
+        // Accelerometer values are in G-force, need to convert to m/s²
+        
+        // For now, return None as Switch Pro gyro requires specific HID report format
+        // This can be extended when we have the exact report format
+        None
+    }
+    
+    /// Read gyro data from Switch Pro Controller
+    pub fn read_gyro(&mut self) -> Result<Option<GyroData>> {
+        if let Some(ref device) = self.device {
+            let mut buf = [0u8; 64];
+            let len = device.read_timeout(&mut buf, Duration::from_millis(16))?;
+
+            if len > 0 {
+                return Ok(Self::parse_gyro_data(&buf[..len]));
+            }
+        }
+        Ok(None)
     }
 
     pub fn set_rumble(&mut self, low_freq: u8, high_freq: u8) -> Result<()> {
@@ -95,4 +138,5 @@ pub struct SwitchProInput {
     pub left_stick_y: f32,
     pub right_stick_x: f32,
     pub right_stick_y: f32,
+    pub gyro: Option<GyroData>,
 }

@@ -27,8 +27,8 @@
 //!
 //! Iterates until fixed point (no changes).
 
-use crate::recompiler::decoder::{DecodedInstruction, Operand};
 use crate::recompiler::analysis::control_flow::ControlFlowGraph;
+use crate::recompiler::decoder::{DecodedInstruction, Operand};
 use bitvec::prelude::*;
 use smallvec::SmallVec;
 use std::collections::HashMap;
@@ -128,28 +128,29 @@ impl DataFlowAnalyzer {
     /// let instructions = vec![/* decoded instructions */];
     /// let chains = DataFlowAnalyzer::build_def_use_chains(&instructions);
     /// if let Some(chain) = chains.get(&3) {
-    ///     println!("Register r3 has {} definitions and {} uses", 
+    ///     println!("Register r3 has {} definitions and {} uses",
     ///              chain.definitions.len(), chain.uses.len());
     /// }
     /// ```
     #[inline] // May be called frequently
-    pub fn build_def_use_chains(
-        instructions: &[DecodedInstruction],
-    ) -> HashMap<u8, DefUseChain> {
+    pub fn build_def_use_chains(instructions: &[DecodedInstruction]) -> HashMap<u8, DefUseChain> {
         let mut chains: HashMap<u8, DefUseChain> = HashMap::new();
         let mut definitions: HashMap<u8, SmallVec<[Definition; 4]>> = HashMap::new();
         let mut uses: HashMap<u8, SmallVec<[Use; 8]>> = HashMap::new();
-        
+
         let mut instruction_address: u32 = 0u32;
         for (idx, inst) in instructions.iter().enumerate() {
             // Find definitions (instructions that write to registers)
             if let Some(def_reg) = Self::get_definition_register(inst) {
-                definitions.entry(def_reg).or_insert_with(SmallVec::new).push(Definition {
-                    instruction_index: idx,
-                    address: instruction_address,
-                });
+                definitions
+                    .entry(def_reg)
+                    .or_insert_with(SmallVec::new)
+                    .push(Definition {
+                        instruction_index: idx,
+                        address: instruction_address,
+                    });
             }
-            
+
             // Find uses (instructions that read from registers)
             for use_reg in Self::get_use_registers(inst) {
                 uses.entry(use_reg).or_insert_with(SmallVec::new).push(Use {
@@ -157,28 +158,31 @@ impl DataFlowAnalyzer {
                     address: instruction_address,
                 });
             }
-            
+
             instruction_address = instruction_address.wrapping_add(4); // PowerPC instructions are 4 bytes
         }
-        
+
         // Combine definitions and uses into chains
         // PowerPC has 32 GPRs (r0-r31)
         for reg in 0u8..32u8 {
             let defs: SmallVec<[Definition; 4]> = definitions.remove(&reg).unwrap_or_default();
             let uses_list: SmallVec<[Use; 8]> = uses.remove(&reg).unwrap_or_default();
-            
+
             if !defs.is_empty() || !uses_list.is_empty() {
-                chains.insert(reg, DefUseChain {
-                    register: reg,
-                    definitions: defs,
-                    uses: uses_list,
-                });
+                chains.insert(
+                    reg,
+                    DefUseChain {
+                        register: reg,
+                        definitions: defs,
+                        uses: uses_list,
+                    },
+                );
             }
         }
-        
+
         chains
     }
-    
+
     /// Extract the register that is defined (written to) by an instruction.
     ///
     /// # Algorithm
@@ -210,7 +214,7 @@ impl DataFlowAnalyzer {
         }
         None
     }
-    
+
     /// Extract all registers that are used (read from) by an instruction.
     ///
     /// # Algorithm
@@ -224,7 +228,7 @@ impl DataFlowAnalyzer {
     #[inline] // Hot path - called for every instruction
     fn get_use_registers(inst: &DecodedInstruction) -> SmallVec<[u8; 4]> {
         let mut uses: SmallVec<[u8; 4]> = SmallVec::new();
-        
+
         // Check all operands for register uses
         let def_reg: Option<u8> = Self::get_definition_register(inst);
         for operand in inst.instruction.operands.iter() {
@@ -242,10 +246,10 @@ impl DataFlowAnalyzer {
                 _ => {}
             }
         }
-        
+
         uses
     }
-    
+
     /// Perform live variable analysis on a control flow graph.
     ///
     /// # Algorithm
@@ -275,18 +279,18 @@ impl DataFlowAnalyzer {
         let mut live_at_entry: HashMap<u32, BitVec<u32>> = HashMap::new();
         let mut live_at_exit: HashMap<u32, BitVec<u32>> = HashMap::new();
         let mut changed: bool = true;
-        
+
         // Initialize all blocks with empty live sets
         // Use BitVec with 32 bits (one per PowerPC GPR)
         for block in cfg.nodes.iter() {
             live_at_entry.insert(block.id, bitvec![u32, Lsb0; 0; 32]);
             live_at_exit.insert(block.id, bitvec![u32, Lsb0; 0; 32]);
         }
-        
+
         // Iterative data flow analysis
         while changed {
             changed = false;
-            
+
             for block in cfg.nodes.iter() {
                 // Compute live at exit (union of live at entry of successors)
                 let mut exit_live: BitVec<u32> = bitvec![u32, Lsb0; 0; 32];
@@ -295,26 +299,29 @@ impl DataFlowAnalyzer {
                         exit_live |= entry_live; // Bitwise OR for union
                     }
                 }
-                
+
                 // Compute live at entry (gen ∪ (exit - kill))
                 let mut entry_live: BitVec<u32> = exit_live.clone();
-                
+
                 // Remove killed registers (defined in this block)
                 for inst in block.instructions.iter() {
                     if let Some(killed) = Self::get_definition_register(inst) {
                         entry_live.set(killed as usize, false);
                     }
                 }
-                
+
                 // Add generated registers (used in this block)
                 for inst in block.instructions.iter() {
                     for used in Self::get_use_registers(inst).iter() {
                         entry_live.set(*used as usize, true);
                     }
                 }
-                
+
                 // Check if changed
-                let old_entry: BitVec<u32> = live_at_entry.get(&block.id).cloned().unwrap_or_else(|| bitvec![u32, Lsb0; 0; 32]);
+                let old_entry: BitVec<u32> = live_at_entry
+                    .get(&block.id)
+                    .cloned()
+                    .unwrap_or_else(|| bitvec![u32, Lsb0; 0; 32]);
                 if old_entry != entry_live {
                     changed = true;
                     live_at_entry.insert(block.id, entry_live);
@@ -322,13 +329,13 @@ impl DataFlowAnalyzer {
                 }
             }
         }
-        
+
         LiveVariableAnalysis {
             live_at_entry,
             live_at_exit,
         }
     }
-    
+
     /// Eliminate dead code using live variable analysis.
     ///
     /// # Algorithm
@@ -354,7 +361,7 @@ impl DataFlowAnalyzer {
         _live_analysis: &LiveVariableAnalysis,
     ) -> Vec<DecodedInstruction> {
         let mut optimized: Vec<DecodedInstruction> = Vec::new();
-        
+
         // Simple dead code elimination: remove definitions that are never used
         // In a full implementation, would use live_analysis to track uses across blocks
         for inst in instructions.iter() {
@@ -367,7 +374,7 @@ impl DataFlowAnalyzer {
                         break;
                     }
                 }
-                
+
                 if is_used {
                     optimized.push(inst.clone());
                 }
@@ -376,7 +383,7 @@ impl DataFlowAnalyzer {
                 optimized.push(inst.clone());
             }
         }
-        
+
         optimized
     }
 }

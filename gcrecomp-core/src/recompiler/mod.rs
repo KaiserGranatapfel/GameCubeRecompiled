@@ -6,4 +6,8 @@ pub mod codegen;
 pub mod pipeline;
 pub mod optimizer;
 pub mod error;
+pub mod linker;
+pub mod structure;
+pub mod game_quirks;
+pub mod pattern_detection;
 

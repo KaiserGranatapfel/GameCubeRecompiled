@@ -1,5 +1,9 @@
+pub mod audio;
 pub mod graphics;
+pub mod hardware;
 pub mod input;
 pub mod memory;
+pub mod mods;
 pub mod runtime;
 pub mod texture;
+pub mod tracing;

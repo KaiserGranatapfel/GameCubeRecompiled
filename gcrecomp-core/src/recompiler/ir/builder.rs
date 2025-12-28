@@ -155,8 +155,23 @@ impl IRBuilder {
     /// `Result<Option<IRInstruction>>` - IR load instruction
     #[inline] // Hot path
     fn convert_load(inst: &DecodedInstruction) -> Result<Option<IRInstruction>> {
-        // Placeholder - would extract destination register and address
-        Ok(None)
+        use crate::recompiler::decoder::Operand;
+        
+        // Extract destination register and address
+        if let (Some(Operand::Register(dst)), Some(Operand::Register(base)), offset_op) = (
+            inst.instruction.operands.get(0),
+            inst.instruction.operands.get(1),
+            inst.instruction.operands.get(2),
+        ) {
+            let addr = if let Some(Operand::Immediate(offset)) = offset_op {
+                Address::Register { base: *base, offset: *offset as i32 }
+            } else {
+                Address::Register { base: *base, offset: 0 }
+            };
+            Ok(Some(IRInstruction::Load { dst: *dst, addr }))
+        } else {
+            Ok(None)
+        }
     }
     
     /// Convert a store instruction to IR.
@@ -168,8 +183,23 @@ impl IRBuilder {
     /// `Result<Option<IRInstruction>>` - IR store instruction
     #[inline] // Hot path
     fn convert_store(inst: &DecodedInstruction) -> Result<Option<IRInstruction>> {
-        // Placeholder - would extract source register and address
-        Ok(None)
+        use crate::recompiler::decoder::Operand;
+        
+        // Extract source register and address
+        if let (Some(Operand::Register(src)), Some(Operand::Register(base)), offset_op) = (
+            inst.instruction.operands.get(0),
+            inst.instruction.operands.get(1),
+            inst.instruction.operands.get(2),
+        ) {
+            let addr = if let Some(Operand::Immediate(offset)) = offset_op {
+                Address::Register { base: *base, offset: *offset as i32 }
+            } else {
+                Address::Register { base: *base, offset: 0 }
+            };
+            Ok(Some(IRInstruction::Store { src: *src, addr }))
+        } else {
+            Ok(None)
+        }
     }
     
     /// Convert a branch instruction to IR.
@@ -181,7 +211,23 @@ impl IRBuilder {
     /// `Result<Option<IRInstruction>>` - IR branch instruction
     #[inline] // Hot path
     fn convert_branch(inst: &DecodedInstruction) -> Result<Option<IRInstruction>> {
-        // Placeholder - would extract branch target and condition
-        Ok(None)
+        use crate::recompiler::decoder::Operand;
+        
+        // Extract branch target
+        if let Some(Operand::Immediate(target)) = inst.instruction.operands.get(0) {
+            // Check if conditional branch
+            if inst.instruction.instruction_type == crate::recompiler::decoder::InstructionType::Branch {
+                // Conditional branch - would extract condition from CR
+                Ok(Some(IRInstruction::BranchCond {
+                    cond: Condition::Equal, // Simplified
+                    target: *target as u32,
+                }))
+            } else {
+                // Unconditional branch
+                Ok(Some(IRInstruction::Branch { target: *target as u32 }))
+            }
+        } else {
+            Ok(None)
+        }
     }
 }

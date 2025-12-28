@@ -201,6 +201,7 @@ impl GameCubeMapping {
             right_stick,
             left_trigger,
             right_trigger,
+            gyro_enabled: input.gyro.is_some(),
         }
     }
 

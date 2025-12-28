@@ -83,7 +83,13 @@ impl DolFile {
     pub fn parse(data: &[u8], path: &str) -> Result<Self> {
         const MIN_DOL_SIZE: usize = 0x100usize;
         if data.len() < MIN_DOL_SIZE {
-            anyhow::bail!("DOL file too small: {} bytes (minimum {} bytes)", data.len(), MIN_DOL_SIZE);
+            // Try partial parsing with warnings
+            log::warn!(
+                "DOL file too small: {} bytes (minimum {} bytes), attempting partial parse",
+                data.len(),
+                MIN_DOL_SIZE
+            );
+            return Self::parse_partial(data, path);
         }
 
         let mut cursor: Cursor<&[u8]> = Cursor::new(data);
@@ -143,9 +149,37 @@ impl DolFile {
             if text_offsets[i] != 0u32 && text_sizes[i] != 0u32 {
                 let offset: usize = text_offsets[i] as usize;
                 let size: usize = text_sizes[i] as usize;
-                
+
                 if offset.wrapping_add(size) > data.len() {
-                    anyhow::bail!("Text section {} extends beyond file: offset {}, size {}", i, offset, size);
+                    // Graceful degradation: use available data
+                    log::warn!(
+                        "Text section {} extends beyond file: offset {}, size {}, file_size {}, using partial data",
+                        i,
+                        offset,
+                        size,
+                        data.len()
+                    );
+                    
+                    let available_size = data.len().saturating_sub(offset);
+                    if available_size > 0 {
+                        let section_data: Vec<u8> = data[offset..offset.wrapping_add(available_size)].to_vec();
+                        text_sections.push(Section {
+                            offset: text_offsets[i],
+                            address: text_addresses[i],
+                            size: available_size as u32,
+                            data: section_data,
+                            executable: true,
+                        });
+                    } else {
+                        log::warn!("Skipping text section {} (no data available)", i);
+                    }
+                    continue;
+                }
+                
+                // Validate section data
+                if size == 0 {
+                    log::warn!("Text section {} has zero size, skipping", i);
+                    continue;
                 }
 
                 let section_data: Vec<u8> = data[offset..offset.wrapping_add(size)].to_vec();
@@ -165,9 +199,37 @@ impl DolFile {
             if data_offsets[i] != 0u32 && data_sizes[i] != 0u32 {
                 let offset: usize = data_offsets[i] as usize;
                 let size: usize = data_sizes[i] as usize;
-                
+
                 if offset.wrapping_add(size) > data.len() {
-                    anyhow::bail!("Data section {} extends beyond file: offset {}, size {}", i, offset, size);
+                    // Graceful degradation: use available data
+                    log::warn!(
+                        "Data section {} extends beyond file: offset {}, size {}, file_size {}, using partial data",
+                        i,
+                        offset,
+                        size,
+                        data.len()
+                    );
+                    
+                    let available_size = data.len().saturating_sub(offset);
+                    if available_size > 0 {
+                        let section_data: Vec<u8> = data[offset..offset.wrapping_add(available_size)].to_vec();
+                        data_sections.push(Section {
+                            offset: data_offsets[i],
+                            address: data_addresses[i],
+                            size: available_size as u32,
+                            data: section_data,
+                            executable: false,
+                        });
+                    } else {
+                        log::warn!("Skipping data section {} (no data available)", i);
+                    }
+                    continue;
+                }
+                
+                // Validate section data
+                if size == 0 {
+                    log::warn!("Data section {} has zero size, skipping", i);
+                    continue;
                 }
 
                 let section_data: Vec<u8> = data[offset..offset.wrapping_add(size)].to_vec();
@@ -181,6 +243,127 @@ impl DolFile {
             }
         }
 
+        // Validate entry point
+        if entry_point == 0 {
+            log::warn!("Entry point is zero, this may indicate a corrupted DOL file");
+        }
+        
+        // Validate BSS section
+        if bss_size > 0x1000000 {
+            log::warn!("BSS size is unusually large: {} bytes, may be corrupted", bss_size);
+        }
+
+        Ok(Self {
+            text_sections,
+            data_sections,
+            bss_address,
+            bss_size,
+            entry_point,
+            path: path.to_string(),
+        })
+    }
+
+    /// Parse DOL file with partial data (for corrupted/malformed files)
+    fn parse_partial(data: &[u8], path: &str) -> Result<Self> {
+        log::warn!("Attempting partial parse of DOL file: {}", path);
+        
+        // Try to parse what we can
+        let mut cursor: Cursor<&[u8]> = Cursor::new(data);
+        
+        // Read what we can from header
+        let mut text_offsets = [0u32; 7];
+        let mut data_offsets = [0u32; 11];
+        let mut text_addresses = [0u32; 7];
+        let mut data_addresses = [0u32; 11];
+        let mut text_sizes = [0u32; 7];
+        let mut data_sizes = [0u32; 11];
+        
+        // Try to read header fields, but don't fail if we can't
+        for offset in text_offsets.iter_mut() {
+            *offset = read_u32_be(&mut cursor).unwrap_or(0);
+        }
+        for offset in data_offsets.iter_mut() {
+            *offset = read_u32_be(&mut cursor).unwrap_or(0);
+        }
+        for addr in text_addresses.iter_mut() {
+            *addr = read_u32_be(&mut cursor).unwrap_or(0);
+        }
+        for addr in data_addresses.iter_mut() {
+            *addr = read_u32_be(&mut cursor).unwrap_or(0);
+        }
+        for size in text_sizes.iter_mut() {
+            *size = read_u32_be(&mut cursor).unwrap_or(0);
+        }
+        for size in data_sizes.iter_mut() {
+            *size = read_u32_be(&mut cursor).unwrap_or(0);
+        }
+        
+        // Try to read BSS and entry point
+        let bss_address = if cursor.position() >= 0xD8 {
+            cursor.set_position(0xD8);
+            read_u32_be(&mut cursor).unwrap_or(0)
+        } else {
+            0
+        };
+        
+        let bss_size = if cursor.position() >= 0xDC {
+            cursor.set_position(0xDC);
+            read_u32_be(&mut cursor).unwrap_or(0)
+        } else {
+            0
+        };
+        
+        let entry_point = if cursor.position() >= 0xE0 {
+            cursor.set_position(0xE0);
+            read_u32_be(&mut cursor).unwrap_or(0)
+        } else {
+            0
+        };
+        
+        // Parse sections with maximum tolerance
+        let mut text_sections = Vec::new();
+        for i in 0..7 {
+            if text_offsets[i] != 0 && text_sizes[i] != 0 {
+                let offset = text_offsets[i] as usize;
+                let size = text_sizes[i] as usize;
+                let available_size = data.len().saturating_sub(offset).min(size);
+                
+                if available_size > 0 {
+                    let section_data = data[offset..offset + available_size].to_vec();
+                    text_sections.push(Section {
+                        offset: text_offsets[i],
+                        address: text_addresses[i],
+                        size: available_size as u32,
+                        data: section_data,
+                        executable: true,
+                    });
+                }
+            }
+        }
+        
+        let mut data_sections = Vec::new();
+        for i in 0..11 {
+            if data_offsets[i] != 0 && data_sizes[i] != 0 {
+                let offset = data_offsets[i] as usize;
+                let size = data_sizes[i] as usize;
+                let available_size = data.len().saturating_sub(offset).min(size);
+                
+                if available_size > 0 {
+                    let section_data = data[offset..offset + available_size].to_vec();
+                    data_sections.push(Section {
+                        offset: data_offsets[i],
+                        address: data_addresses[i],
+                        size: available_size as u32,
+                        data: section_data,
+                        executable: false,
+                    });
+                }
+            }
+        }
+        
+        log::warn!("Partial parse complete: {} text sections, {} data sections", 
+                   text_sections.len(), data_sections.len());
+        
         Ok(Self {
             text_sections,
             data_sections,
@@ -202,7 +385,8 @@ impl DolFile {
     /// ```
     #[inline] // Simple function - may be inlined
     pub fn get_all_sections(&self) -> Vec<Section> {
-        let mut all: Vec<Section> = Vec::with_capacity(self.text_sections.len() + self.data_sections.len());
+        let mut all: Vec<Section> =
+            Vec::with_capacity(self.text_sections.len() + self.data_sections.len());
         all.extend_from_slice(&self.text_sections);
         all.extend_from_slice(&self.data_sections);
         all

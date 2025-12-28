@@ -36,6 +36,8 @@ pub struct RawInput {
     pub axes: Vec<f32>,
     pub triggers: Vec<f32>,
     pub hat: Option<HatState>,
+    /// Gyro data (if available)
+    pub gyro: Option<crate::input::gyro::GyroData>,
 }
 
 #[derive(Debug, Clone)]

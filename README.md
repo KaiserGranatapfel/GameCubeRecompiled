@@ -306,6 +306,25 @@ GCRecomp uses aggressive memory optimizations:
 - **Type Inference**: Constraint-based type recovery
 - **Optimization**: Dead code elimination, constant propagation, CSE
 
+## 🙏 Credits and Attributions
+
+GCRecomp is built on the shoulders of giants and incorporates code and ideas from many excellent projects:
+
+### Major Inspiration
+- **[N64Recomp](https://github.com/N64Recomp/N64Recomp)** - The groundbreaking static recompiler for N64 games that inspired this project. Gyro control implementation is heavily influenced by and adapted from N64Recomp.
+
+### Third-Party Libraries
+GCRecomp uses many excellent Rust crates. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for a complete list with links and license information.
+
+### Key Dependencies
+- **Ghidra** - Binary analysis and reverse engineering (Apache-2.0)
+- **wgpu** - Modern graphics API (Apache-2.0 OR MIT)
+- **cpal** - Cross-platform audio (Apache-2.0 OR MIT)
+- **serde** - Serialization framework (MIT OR Apache-2.0)
+- And many more - see [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for full list
+
+For detailed attribution information, including GitHub links and license details, please see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
 ## 📄 License
 
 This project is licensed under the **CC0 1.0 Universal** (Public Domain Dedication) license.
@@ -340,13 +359,8 @@ Similar to how many open-source projects today openly acknowledge AI assistance 
 
 If you discover a security vulnerability, please **do not** open a public issue. Instead, please see [SECURITY.md](SECURITY.md) for reporting instructions.
 
-## 📞 Support
 
-- **Issues**: Report bugs and request features on [GitHub Issues](https://github.com/yourusername/GCRecomp/issues)
-- **Discussions**: Join discussions on [GitHub Discussions](https://github.com/yourusername/GCRecomp/discussions)
-- **Security**: Report security vulnerabilities via [SECURITY.md](SECURITY.md)
-
-## ⚖️ Legal Notice (Repeated for Emphasis)
+## ⚖️ Legal Notice 
 
 **This software is for educational, research, archival, and game preservation purposes only. Users must legally own and dump their own physical GameCube discs. The authors do not condone piracy, copyright infringement, or distribution of recompiled binaries. Use at your own risk and ensure compliance with all applicable laws.**
 

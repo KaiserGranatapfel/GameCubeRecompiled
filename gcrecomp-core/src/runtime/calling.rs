@@ -1,4 +1,37 @@
-// Calling convention helpers
+//! PowerPC Calling Convention Helpers
+//!
+//! This module provides utilities for handling PowerPC calling conventions.
+//!
+//! # PowerPC Calling Convention
+//!
+//! - First 8 arguments passed in registers r3-r10
+//! - Additional arguments passed on the stack
+//! - Return value in register r3
+//! - Stack pointer in register r1
+//! - Link register (LR) stores return address
+//!
+//! # API Reference
+//!
+//! ## CallingConvention
+//!
+//! Helper functions for PowerPC calling convention.
+//!
+//! ```rust,no_run
+//! use gcrecomp_core::runtime::calling::CallingConvention;
+//!
+//! CallingConvention::setup_stack_frame(&mut ctx, frame_size);
+//! let arg = CallingConvention::get_argument(&ctx, 0);
+//! CallingConvention::set_return_value(&mut ctx, value);
+//! ```
+//!
+//! ## Methods
+//!
+//! - `setup_stack_frame()`: Allocate stack frame
+//! - `teardown_stack_frame()`: Deallocate stack frame
+//! - `get_argument()`: Get function argument from register
+//! - `set_return_value()`: Set function return value
+//! - `get_return_value()`: Get function return value
+
 use crate::runtime::context::CpuContext;
 
 /// PowerPC calling convention helper
@@ -10,11 +43,11 @@ impl CallingConvention {
     pub fn setup_stack_frame(ctx: &mut CpuContext, frame_size: u32) {
         // Save old stack pointer
         let old_sp = ctx.get_register(1);
-        
+
         // Allocate new stack frame
         let new_sp = old_sp.wrapping_sub(frame_size);
         ctx.set_register(1, new_sp);
-        
+
         // Store old stack pointer in the new frame (standard PowerPC convention)
         // This would typically be done with stwu instruction
     }
@@ -50,4 +83,3 @@ impl CallingConvention {
         ctx.get_register(3)
     }
 }
-

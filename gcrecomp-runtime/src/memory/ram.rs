@@ -65,12 +65,38 @@ impl Ram {
     /// ```
     #[inline(always)] // Hot path - always inline for performance
     pub fn read_u8(&self, address: u32) -> Result<u8> {
+        // Check if address is in RAM region
+        if address < 0x80000000 || address >= 0x81800000 {
+            // Check for memory-mapped I/O regions
+            if Self::is_memory_mapped_io(address) {
+                return Self::read_memory_mapped_io(address);
+            }
+            anyhow::bail!("RAM read out of bounds: 0x{:08X} (not in RAM region)", address);
+        }
+        
         let addr: usize = (address & 0x00FFFFFFu32) as usize; // 24-bit addressing
         if addr < self.data.len() {
             Ok(self.data[addr])
         } else {
-            anyhow::bail!("RAM read out of bounds: 0x{:08X}", address);
+            anyhow::bail!("RAM read out of bounds: 0x{:08X} (offset {} >= {})", 
+                         address, addr, self.data.len());
         }
+    }
+    
+    /// Check if address is memory-mapped I/O
+    fn is_memory_mapped_io(address: u32) -> bool {
+        // GameCube memory-mapped I/O regions
+        (address >= 0xCC000000 && address < 0xCC200000) || // Video RAM
+        (address >= 0xCD000000 && address < 0xCD800000) || // Audio RAM
+        (address >= 0x80000000 && address < 0x81800000)    // Already handled as RAM
+    }
+    
+    /// Read from memory-mapped I/O
+    fn read_memory_mapped_io(_address: u32) -> Result<u8> {
+        // Memory-mapped I/O reads should go through proper channels
+        // For now, return 0 (uninitialized I/O)
+        log::warn!("Memory-mapped I/O read at 0x{:08X}, returning 0", _address);
+        Ok(0)
     }
 
     /// Read a 16-bit word (big-endian) from RAM.
@@ -90,8 +116,16 @@ impl Ram {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn read_u16(&self, address: u32) -> Result<u16> {
-        let low: u8 = self.read_u8(address)?;
-        let high: u8 = self.read_u8(address.wrapping_add(1u32))?;
+        // Handle unaligned access (GameCube allows unaligned reads)
+        // Check bounds for both bytes
+        let addr: usize = (address & 0x00FFFFFFu32) as usize;
+        if addr + 1 >= self.data.len() {
+            anyhow::bail!("RAM read_u16 out of bounds: 0x{:08X}", address);
+        }
+        
+        // Read bytes (big-endian)
+        let high: u8 = self.data[addr];
+        let low: u8 = self.data[addr + 1];
         Ok(u16::from_be_bytes([high, low]))
     }
 
@@ -139,13 +173,30 @@ impl Ram {
     /// ```
     #[inline(always)] // Hot path - always inline for performance
     pub fn write_u8(&mut self, address: u32, value: u8) -> Result<()> {
+        // Check if address is in RAM region
+        if address < 0x80000000 || address >= 0x81800000 {
+            // Check for memory-mapped I/O regions
+            if Self::is_memory_mapped_io(address) {
+                return Self::write_memory_mapped_io(address, value);
+            }
+            anyhow::bail!("RAM write out of bounds: 0x{:08X} (not in RAM region)", address);
+        }
+        
         let addr: usize = (address & 0x00FFFFFFu32) as usize;
         if addr < self.data.len() {
             self.data[addr] = value;
             Ok(())
         } else {
-            anyhow::bail!("RAM write out of bounds: 0x{:08X}", address);
+            anyhow::bail!("RAM write out of bounds: 0x{:08X} (offset {} >= {})", 
+                         address, addr, self.data.len());
         }
+    }
+    
+    /// Write to memory-mapped I/O
+    fn write_memory_mapped_io(_address: u32, _value: u8) -> Result<()> {
+        // Memory-mapped I/O writes should go through proper channels
+        log::warn!("Memory-mapped I/O write at 0x{:08X} = 0x{:02X} (ignored)", _address, _value);
+        Ok(())
     }
 
     /// Write a 16-bit word (big-endian) to RAM.

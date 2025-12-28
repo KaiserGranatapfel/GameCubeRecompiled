@@ -2,6 +2,7 @@
 use crate::input::backends::{Backend, ControllerInfo};
 use crate::input::gamecube_mapping::GameCubeMapping;
 use crate::input::profiles::ControllerProfile;
+use crate::input::gyro::{GyroController, GyroMappingMode};
 use anyhow::Result;
 use std::collections::HashMap;
 
@@ -10,6 +11,7 @@ pub struct ControllerManager {
     controllers: HashMap<usize, ControllerState>,
     gamecube_mappings: HashMap<usize, GameCubeMapping>,
     profiles: HashMap<String, ControllerProfile>,
+    gyro_controllers: HashMap<usize, GyroController>,
     next_id: usize,
 }
 
@@ -48,6 +50,7 @@ impl ControllerManager {
             controllers: HashMap::new(),
             gamecube_mappings: HashMap::new(),
             profiles: HashMap::new(),
+            gyro_controllers: HashMap::new(),
             next_id: 0,
         })
     }
@@ -70,6 +73,9 @@ impl ControllerManager {
 
                     // Load default profile or create new mapping
                     self.load_default_mapping(controller.id)?;
+                    
+                    // Initialize gyro controller
+                    self.gyro_controllers.insert(controller.id, GyroController::new());
                 }
             }
 
@@ -101,17 +107,58 @@ impl ControllerManager {
         self.controllers.get(&id)
     }
 
-    pub fn get_gamecube_input(&self, controller_id: usize) -> Option<GameCubeInput> {
+    pub fn get_gamecube_input(&mut self, controller_id: usize) -> Option<GameCubeInput> {
         let mapping = self.gamecube_mappings.get(&controller_id)?;
 
         // Get raw input from backend
         for backend in &self.backends {
-            if let Ok(input) = backend.get_input(controller_id) {
+            if let Ok(mut input) = backend.get_input(controller_id) {
+                // Update gyro if available
+                if let Some(gyro_data) = input.gyro.take() {
+                    if let Some(gyro_controller) = self.gyro_controllers.get_mut(&controller_id) {
+                        gyro_controller.update(gyro_data);
+                        
+                        // Apply gyro to stick inputs
+                        let (gyro_lx, gyro_ly) = gyro_controller.get_left_stick_input();
+                        let (gyro_rx, gyro_ry) = gyro_controller.get_right_stick_input();
+                        
+                        // Combine with physical stick inputs
+                        if input.axes.len() >= 2 {
+                            input.axes[0] = (input.axes[0] + gyro_lx).clamp(-1.0, 1.0);
+                            input.axes[1] = (input.axes[1] + gyro_ly).clamp(-1.0, 1.0);
+                        }
+                        if input.axes.len() >= 4 {
+                            input.axes[2] = (input.axes[2] + gyro_rx).clamp(-1.0, 1.0);
+                            input.axes[3] = (input.axes[3] + gyro_ry).clamp(-1.0, 1.0);
+                        }
+                        
+                        // Put gyro data back for mapping
+                        input.gyro = Some(gyro_data);
+                    }
+                }
+                
                 return Some(mapping.map_to_gamecube(&input));
             }
         }
 
         None
+    }
+    
+    /// Get gyro controller for a specific controller
+    pub fn get_gyro_controller(&self, controller_id: usize) -> Option<&GyroController> {
+        self.gyro_controllers.get(&controller_id)
+    }
+    
+    /// Get mutable gyro controller for a specific controller
+    pub fn get_gyro_controller_mut(&mut self, controller_id: usize) -> Option<&mut GyroController> {
+        self.gyro_controllers.get_mut(&controller_id)
+    }
+    
+    /// Set gyro mapping mode for a controller
+    pub fn set_gyro_mapping_mode(&mut self, controller_id: usize, mode: GyroMappingMode) {
+        if let Some(gyro) = self.gyro_controllers.get_mut(&controller_id) {
+            gyro.set_mapping_mode(mode);
+        }
     }
 
     pub fn set_mapping(&mut self, controller_id: usize, mapping: GameCubeMapping) {
@@ -151,6 +198,8 @@ pub struct GameCubeInput {
     pub right_stick: (f32, f32),
     pub left_trigger: f32,
     pub right_trigger: f32,
+    /// Gyro input applied to sticks (if enabled)
+    pub gyro_enabled: bool,
 }
 
 #[derive(Debug, Clone, Default)]
