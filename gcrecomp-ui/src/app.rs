@@ -14,6 +14,7 @@ pub enum Message {
     OpenAudioSettings,
     OpenInputSettings,
     OpenControllerConfig,
+    OpenButtonMapping,
     OpenGameSettings,
     CloseMenu,
     ConfigChanged(GameConfig),
@@ -34,6 +35,7 @@ enum Screen {
     InputSettings,
     GameSettings,
     ControllerConfig,
+    ButtonMapping,
 }
 
 impl Application for App {
@@ -112,6 +114,9 @@ impl Application for App {
             Screen::InputSettings => crate::ui::input_settings::InputSettings::view(&self.config),
             Screen::ControllerConfig => {
                 crate::ui::controller_config::ControllerConfigUI::view(&self.config)
+            }
+            Screen::ButtonMapping => {
+                crate::ui::button_mapping::ButtonMappingUI::view(&self.config)
             }
             Screen::GameSettings => crate::ui::game_settings::GameSettings::view(&self.config),
         };

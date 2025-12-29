@@ -45,6 +45,8 @@ use crate::input::ControllerManager;
 use crate::memory::{ARam, DmaSystem, Ram, VRam};
 use crate::mods::hooks::HookManager;
 use crate::mods::{ModLoader, ModRegistry};
+use crate::runtime::performance::PerformanceMonitor;
+use crate::runtime::save_state::SaveStateManager;
 use crate::texture::TextureLoader;
 use crate::tracing::RuntimeTracer;
 use anyhow::Result;
@@ -63,6 +65,8 @@ pub struct Runtime {
     tracer: RuntimeTracer,
     dsp: DSP,
     audio_interface: AudioInterface,
+    performance_monitor: PerformanceMonitor,
+    save_state_manager: SaveStateManager,
 }
 
 impl Runtime {
@@ -94,6 +98,8 @@ impl Runtime {
             tracer: RuntimeTracer::new(),
             dsp,
             audio_interface,
+            performance_monitor: PerformanceMonitor::default(),
+            save_state_manager: SaveStateManager::default(),
         })
     }
 
@@ -257,7 +263,11 @@ impl Runtime {
     /// - Graphics (GX commands)
     /// - Audio buffers
     /// - Mod hooks
+    /// - Performance monitoring
     pub fn update(&mut self) -> Result<()> {
+        // Record frame for performance monitoring
+        self.performance_monitor.record_frame();
+
         // Update controller manager (poll for input)
         self.controller_manager.update()?;
 
@@ -279,6 +289,11 @@ impl Runtime {
 
         // Process mod hooks (if any are registered)
         // Hook processing happens automatically when functions are called
+
+        // Update performance metrics
+        // RAM is 24MB, VRAM is 2MB (fixed sizes)
+        self.performance_monitor.set_ram_usage(24 * 1024 * 1024);
+        self.performance_monitor.set_vram_usage(2 * 1024 * 1024);
 
         // Frame timing: target 60 FPS (16.67ms per frame)
         // Actual timing would be handled by the main loop
@@ -343,5 +358,56 @@ impl Runtime {
 
     pub fn audio_interface_mut(&mut self) -> &mut AudioInterface {
         &mut self.audio_interface
+    }
+
+    /// Get performance monitor
+    pub fn performance_monitor(&self) -> &PerformanceMonitor {
+        &self.performance_monitor
+    }
+
+    /// Get mutable performance monitor
+    pub fn performance_monitor_mut(&mut self) -> &mut PerformanceMonitor {
+        &mut self.performance_monitor
+    }
+
+    /// Get save state manager
+    pub fn save_state_manager(&self) -> &SaveStateManager {
+        &self.save_state_manager
+    }
+
+    /// Get mutable save state manager
+    pub fn save_state_manager_mut(&mut self) -> &mut SaveStateManager {
+        &mut self.save_state_manager
+    }
+
+    /// Quick save current state
+    pub fn quick_save(&mut self, game_id: Option<String>) -> Result<std::path::PathBuf> {
+        let ram_data = self.ram.read_bytes(0, 24 * 1024 * 1024)?;
+        let vram_data = self.vram.read_bytes(0, 2 * 1024 * 1024)?;
+        let aram_data = self.aram.read_bytes(0, 16 * 1024 * 1024)?;
+        
+        self.save_state_manager.quick_save(game_id, &ram_data, &vram_data, &aram_data)
+    }
+
+    /// Load save state
+    pub fn load_save_state(&mut self, filename: &str) -> Result<()> {
+        let save_state = self.save_state_manager.load_from_file(filename)?;
+        
+        // Restore RAM
+        if save_state.ram.len() == 24 * 1024 * 1024 {
+            self.ram.write_bytes(0x80000000, &save_state.ram)?;
+        }
+        
+        // Restore VRAM
+        if save_state.vram.len() == 2 * 1024 * 1024 {
+            self.vram.write_bytes(0, &save_state.vram)?;
+        }
+        
+        // Restore ARAM
+        if save_state.aram.len() == 16 * 1024 * 1024 {
+            self.aram.write_bytes(0, &save_state.aram)?;
+        }
+        
+        Ok(())
     }
 }

@@ -1,7 +1,9 @@
 pub mod audio_settings;
+pub mod button_mapping;
 pub mod controller_config;
 pub mod fps_settings;
 pub mod game_settings;
 pub mod graphics_settings;
 pub mod input_settings;
 pub mod main_menu;
+pub mod performance_stats;

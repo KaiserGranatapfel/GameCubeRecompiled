@@ -1,7 +1,9 @@
 // Main renderer
 use crate::graphics::framebuffer::FrameBuffer;
 use crate::graphics::gx::{GXProcessor, TextureObject};
+use crate::graphics::post_processing::PostProcessor;
 use crate::graphics::shaders::ShaderManager;
+use crate::graphics::splash::SplashScreen;
 use crate::graphics::upscaler::Upscaler;
 use crate::texture::{GameCubeTextureFormat, TextureLoader};
 use anyhow::Result;
@@ -24,6 +26,9 @@ pub struct Renderer {
     texture_loader: TextureLoader,
     current_texture: Option<wgpu::Texture>,
     texture_bind_group: Option<wgpu::BindGroup>,
+    splash_screen: Option<SplashScreen>,
+    post_processor: Option<PostProcessor>,
+    anisotropic_filtering: u32, // 0 = off, 2, 4, 8, 16
 }
 
 impl Renderer {
@@ -97,6 +102,9 @@ impl Renderer {
         shader_manager.load_shader(&device, "default_vertex", default_vert)?;
         shader_manager.load_shader(&device, "default_fragment", default_frag)?;
 
+        // Create splash screen
+        let splash_screen = SplashScreen::new(&device, &queue, &config).ok();
+
         Ok(Self {
             device,
             queue,
@@ -114,6 +122,9 @@ impl Renderer {
             texture_loader,
             current_texture: None,
             texture_bind_group: None,
+            splash_screen,
+            post_processor: PostProcessor::new(&device, &queue, &config).ok(),
+            anisotropic_filtering: 0,
         })
     }
 
@@ -122,6 +133,25 @@ impl Renderer {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
+        
+        if let Some(ref mut post_processor) = self.post_processor {
+            post_processor.resize(width, height).ok();
+        }
+    }
+
+    /// Set anisotropic filtering level (0 = off, 2, 4, 8, 16)
+    pub fn set_anisotropic_filtering(&mut self, level: u32) {
+        self.anisotropic_filtering = level;
+    }
+
+    /// Get post-processor
+    pub fn post_processor(&self) -> Option<&PostProcessor> {
+        self.post_processor.as_ref()
+    }
+
+    /// Get mutable post-processor
+    pub fn post_processor_mut(&mut self) -> Option<&mut PostProcessor> {
+        self.post_processor.as_mut()
     }
 
     pub fn set_resolution(&mut self, width: u32, height: u32) {
@@ -233,12 +263,29 @@ impl Renderer {
     ///
     /// Processes GX commands and renders to the current frame buffer
     pub fn render_frame(&mut self) -> Result<()> {
-        // Process GX commands (this populates vertex data)
-        self.process_gx_commands()?;
-
         // Begin render pass
         let frame = self.begin_frame()?;
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
+
+        // Check if splash screen should be displayed
+        if let Some(ref mut splash) = self.splash_screen {
+            if splash.should_display() {
+                splash.update(&self.queue);
+                let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("Splash Render Encoder"),
+                });
+                splash.render(&mut encoder, &view);
+                self.queue.submit(Some(encoder.finish()));
+                frame.present();
+                return Ok(());
+            } else {
+                // Splash screen finished, remove it
+                self.splash_screen = None;
+            }
+        }
+
+        // Process GX commands (this populates vertex data)
+        self.process_gx_commands()?;
 
         // Create render pass
         let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {

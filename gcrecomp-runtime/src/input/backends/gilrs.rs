@@ -67,14 +67,18 @@ impl Backend for GilrsBackend {
                 }
             }
 
-            // Gilrs doesn't have direct gyro support
-            // Return None for now
+            // Gilrs doesn't have direct gyro support in the main API
+            // However, we can try to read gyro data if the controller supports it
+            // via platform-specific APIs or hidapi
+            // For now, return None - can be enhanced with hidapi integration
+            let gyro = None; // Would need hidapi integration for gilrs controllers
+            
             Ok(RawInput {
                 buttons,
                 axes,
                 triggers,
                 hat: None,
-                gyro: None,
+                gyro,
             })
         } else {
             anyhow::bail!("Controller not found: {}", controller_id);

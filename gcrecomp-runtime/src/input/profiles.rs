@@ -1,4 +1,5 @@
 // Controller profile management
+use crate::input::button_mapper::ButtonMapper;
 use crate::input::gamecube_mapping::GameCubeMapping;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,11 @@ pub struct ControllerProfile {
     pub name: String,
     pub controller_type: String,
     pub mapping: SerializedMapping,
+    pub button_mapper: Option<ButtonMapper>,
+    pub gyro_enabled: bool,
+    pub gyro_sensitivity: f32,
+    pub gyro_dead_zone: f32,
+    pub gyro_mapping_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +45,18 @@ impl ControllerProfile {
                     mapping.sensitivity.right_stick,
                 ],
             },
+            button_mapper: None,
+            gyro_enabled: false,
+            gyro_sensitivity: 1.0,
+            gyro_dead_zone: 0.01,
+            gyro_mapping_mode: "RightStick".to_string(),
         }
+    }
+
+    pub fn from_mapping_with_mapper(name: String, mapping: GameCubeMapping, mapper: ButtonMapper) -> Self {
+        let mut profile = Self::from_mapping(name, mapping);
+        profile.button_mapper = Some(mapper);
+        profile
     }
 
     pub fn to_gamecube_mapping(&self) -> Result<GameCubeMapping> {

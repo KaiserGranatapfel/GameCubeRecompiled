@@ -267,3 +267,29 @@ impl GameCubeMapping {
 }
 
 use anyhow::Result;
+
+impl Default for GameCubeMapping {
+    fn default() -> Self {
+        Self::generic_default()
+    }
+}
+
+impl Default for DeadZones {
+    fn default() -> Self {
+        Self {
+            left_stick: 0.15,
+            right_stick: 0.15,
+            left_trigger: 0.1,
+            right_trigger: 0.1,
+        }
+    }
+}
+
+impl Default for Sensitivity {
+    fn default() -> Self {
+        Self {
+            left_stick: 1.0,
+            right_stick: 1.0,
+        }
+    }
+}

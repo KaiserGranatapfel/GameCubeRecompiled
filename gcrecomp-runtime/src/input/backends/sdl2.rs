@@ -121,9 +121,18 @@ impl Backend for SDL2Backend {
 
     /// Read gyro data from SDL2 controller if available
     fn read_gyro_data(controller: &sdl2::controller::GameController) -> Option<GyroData> {
-        // SDL2 doesn't have direct gyro API in the controller subsystem
-        // This would need to be implemented via sensor subsystem if available
-        // For now, return None - can be extended later
+        // SDL2 2.0.14+ has sensor support
+        // Try to read gyro data using SDL2's sensor API
+        use sdl2::sensor::SensorSubsystem;
+        
+        // Note: SDL2's sensor API requires the sensor subsystem
+        // This is a simplified implementation - full version would:
+        // 1. Get sensor subsystem from SDL context
+        // 2. Open sensor for the controller
+        // 3. Read gyro and accelerometer data
+        
+        // For now, return None - requires SDL2 sensor subsystem integration
+        // This can be enhanced with proper sensor subsystem access
         None
     }
 }

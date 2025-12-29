@@ -73,14 +73,41 @@ impl ControllerConfigUI {
                             .push(Text::new("Right Stick Dead Zone:"))
                             .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0))),
                     )
-                    .push(Checkbox::new("Invert Y Axis", false))
-                    .push(Checkbox::new("Enable Vibration", true)),
+            .push(Checkbox::new("Invert Y Axis", false))
+            .push(Checkbox::new("Enable Vibration", true))
+            .push(Space::with_height(Length::Fixed(10.0)))
+            .push(Text::new("Gyro Settings:").size(18))
+            .push(Checkbox::new("Enable Gyro", false))
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Gyro Sensitivity:"))
+                    .push(Slider::new(0.0..=2.0, 1.0, |_| {}).width(Length::Fixed(200.0))),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Gyro Dead Zone:"))
+                    .push(Slider::new(0.0..=0.1, 0.01, |_| {}).width(Length::Fixed(200.0))),
+            )
+            .push(Text::new("Gyro Mapping:"))
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Button::new(Text::new("Right Stick")).width(Length::Fixed(120.0)))
+                    .push(Button::new(Text::new("Left Stick")).width(Length::Fixed(120.0)))
+                    .push(Button::new(Text::new("Both")).width(Length::Fixed(120.0)))
+                    .push(Button::new(Text::new("Disabled")).width(Length::Fixed(120.0))),
+            ),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
                 Row::new()
                     .spacing(10)
                     .push(Button::new(Text::new("Test Mode")).width(Length::Fixed(150.0)))
+                    .push(Button::new(Text::new("Button Mapping"))
+                        .on_press(Message::OpenButtonMapping)
+                        .width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Save Profile")).width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Load Profile")).width(Length::Fixed(150.0)))
                     .push(Button::new(Text::new("Reset to Default")).width(Length::Fixed(150.0))),

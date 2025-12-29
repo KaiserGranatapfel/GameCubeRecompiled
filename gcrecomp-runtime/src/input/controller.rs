@@ -1,5 +1,6 @@
 // Controller detection and management
 use crate::input::backends::{Backend, ControllerInfo};
+use crate::input::button_mapper::ButtonMapper;
 use crate::input::gamecube_mapping::GameCubeMapping;
 use crate::input::profiles::ControllerProfile;
 use crate::input::gyro::{GyroController, GyroMappingMode};
@@ -10,6 +11,7 @@ pub struct ControllerManager {
     backends: Vec<Box<dyn Backend>>,
     controllers: HashMap<usize, ControllerState>,
     gamecube_mappings: HashMap<usize, GameCubeMapping>,
+    button_mappers: HashMap<usize, ButtonMapper>,
     profiles: HashMap<String, ControllerProfile>,
     gyro_controllers: HashMap<usize, GyroController>,
     next_id: usize,
@@ -49,6 +51,7 @@ impl ControllerManager {
             backends,
             controllers: HashMap::new(),
             gamecube_mappings: HashMap::new(),
+            button_mappers: HashMap::new(),
             profiles: HashMap::new(),
             gyro_controllers: HashMap::new(),
             next_id: 0,
@@ -73,6 +76,9 @@ impl ControllerManager {
 
                     // Load default profile or create new mapping
                     self.load_default_mapping(controller.id)?;
+                    
+                    // Initialize button mapper
+                    self.button_mappers.insert(controller.id, ButtonMapper::new());
                     
                     // Initialize gyro controller
                     self.gyro_controllers.insert(controller.id, GyroController::new());
@@ -163,6 +169,34 @@ impl ControllerManager {
 
     pub fn set_mapping(&mut self, controller_id: usize, mapping: GameCubeMapping) {
         self.gamecube_mappings.insert(controller_id, mapping);
+    }
+
+    /// Get button mapper for a controller
+    pub fn get_button_mapper(&self, controller_id: usize) -> Option<&ButtonMapper> {
+        self.button_mappers.get(&controller_id)
+    }
+
+    /// Get mutable button mapper for a controller
+    pub fn get_button_mapper_mut(&mut self, controller_id: usize) -> Option<&mut ButtonMapper> {
+        self.button_mappers.get_mut(&controller_id)
+    }
+
+    /// Apply button mapper to controller mapping
+    pub fn apply_button_mapper(&mut self, controller_id: usize) -> Result<()> {
+        if let Some(mapper) = self.button_mappers.get(&controller_id) {
+            if let Some(state) = self.controllers.get(&controller_id) {
+                let mapping = mapper.to_gamecube_mapping(state.info.controller_type.clone());
+                self.set_mapping(controller_id, mapping);
+            }
+        }
+        Ok(())
+    }
+
+    /// Set button mapper for a controller
+    pub fn set_button_mapper(&mut self, controller_id: usize, mapper: ButtonMapper) {
+        self.button_mappers.insert(controller_id, mapper);
+        // Auto-apply the mapper
+        self.apply_button_mapper(controller_id).ok();
     }
 
     pub fn load_profile(&mut self, controller_id: usize, profile_name: &str) -> Result<()> {

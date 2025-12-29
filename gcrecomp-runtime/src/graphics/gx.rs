@@ -7,6 +7,8 @@
 //! Commands are written to the GX FIFO and processed by the graphics hardware.
 
 use anyhow::{Context, Result};
+use glam::{Mat4, Vec3, Vec4};
+use crate::graphics::gx_state::{GXRenderingState, transform_vertex};
 
 /// GX command opcodes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +131,10 @@ pub struct GXProcessor {
     texture_objects: [Option<TextureObject>; 8],
     /// Texture loader callback (for creating wgpu textures)
     texture_loader: Option<Box<dyn Fn(&TextureObject, &[u8]) -> Result<()> + Send + Sync>>,
+    /// Rendering state (blending, fog, alpha test, etc.)
+    rendering_state: GXRenderingState,
+    /// Model-view matrix stack
+    model_view_stack: Vec<Mat4>,
 }
 
 /// Viewport settings
@@ -185,6 +191,8 @@ impl GXProcessor {
             memory_reader: None,
             texture_objects: [None; 8],
             texture_loader: None,
+            rendering_state: GXRenderingState::new(),
+            model_view_stack: vec![Mat4::IDENTITY],
         }
     }
 
@@ -276,7 +284,56 @@ impl GXProcessor {
         let reg = (data >> 16) & 0xFF;
         let value = data & 0xFFFF;
         log::debug!("GX LoadBPReg: reg=0x{:02X}, value=0x{:04X}", reg, value);
+        
         // BP registers control blending, fog, alpha test, etc.
+        // This is a simplified implementation - full BP register handling would decode all registers
+        match reg {
+            0x00..=0x0F => {
+                // Blending control registers
+                let blend_mode = (value >> 8) & 0x7;
+                self.rendering_state.blending = match blend_mode {
+                    0 => crate::graphics::gx_state::BlendingMode::None,
+                    1 => crate::graphics::gx_state::BlendingMode::Alpha,
+                    2 => crate::graphics::gx_state::BlendingMode::Additive,
+                    3 => crate::graphics::gx_state::BlendingMode::Subtractive,
+                    4 => crate::graphics::gx_state::BlendingMode::Multiply,
+                    _ => crate::graphics::gx_state::BlendingMode::None,
+                };
+            }
+            0x10..=0x1F => {
+                // Alpha test registers
+                let func = (value >> 8) & 0x7;
+                self.rendering_state.alpha_test_enabled = (value & 0x1) != 0;
+                self.rendering_state.alpha_test_func = match func {
+                    0 => crate::graphics::gx_state::AlphaTestFunc::Never,
+                    1 => crate::graphics::gx_state::AlphaTestFunc::Less,
+                    2 => crate::graphics::gx_state::AlphaTestFunc::Equal,
+                    3 => crate::graphics::gx_state::AlphaTestFunc::LessEqual,
+                    4 => crate::graphics::gx_state::AlphaTestFunc::Greater,
+                    5 => crate::graphics::gx_state::AlphaTestFunc::NotEqual,
+                    6 => crate::graphics::gx_state::AlphaTestFunc::GreaterEqual,
+                    7 => crate::graphics::gx_state::AlphaTestFunc::Always,
+                    _ => crate::graphics::gx_state::AlphaTestFunc::Always,
+                };
+                self.rendering_state.alpha_test_ref = ((value >> 4) & 0xFF) as f32 / 255.0;
+            }
+            0x20..=0x2F => {
+                // Fog registers
+                self.rendering_state.fog_enabled = (value & 0x1) != 0;
+                let fog_mode = (value >> 8) & 0x3;
+                self.rendering_state.fog_mode = match fog_mode {
+                    0 => crate::graphics::gx_state::FogMode::None,
+                    1 => crate::graphics::gx_state::FogMode::Linear,
+                    2 => crate::graphics::gx_state::FogMode::Exponential,
+                    3 => crate::graphics::gx_state::FogMode::Exponential2,
+                    _ => crate::graphics::gx_state::FogMode::None,
+                };
+            }
+            _ => {
+                // Other BP registers - not fully implemented yet
+            }
+        }
+        
         Ok(())
     }
 
@@ -299,6 +356,35 @@ impl GXProcessor {
         // Args contain the register data
         if args.len() < count as usize {
             anyhow::bail!("Not enough arguments for LoadXFReg");
+        }
+        
+        // Handle matrix loading (simplified - full implementation would handle all XF registers)
+        match reg {
+            0x1008..=0x1017 => {
+                // Projection matrix (4x4, 16 words)
+                if args.len() >= 16 {
+                    for i in 0..16 {
+                        self.projection[i] = f32::from_bits(args[i]);
+                    }
+                }
+            }
+             0x1018..=0x1027 => {
+                // Model-view matrix (4x4, 16 words)
+                if args.len() >= 16 {
+                    let mut matrix_data = [0.0f32; 16];
+                    for i in 0..16 {
+                        matrix_data[i] = f32::from_bits(args[i]);
+                    }
+                    let matrix = Mat4::from_cols_array(&matrix_data);
+                    if let Some(last) = self.model_view_stack.last_mut() {
+                        *last = matrix;
+                        self.rendering_state.model_view = *last;
+                    }
+                }
+            }
+            _ => {
+                // Other XF registers - not fully implemented yet
+            }
         }
         
         Ok(())
@@ -391,8 +477,24 @@ impl GXProcessor {
     }
 
     /// Process SetScissor command
-    fn process_set_scissor(&mut self, data: u32, _args: &[u32]) -> Result<()> {
+    fn process_set_scissor(&mut self, data: u32, args: &[u32]) -> Result<()> {
         log::debug!("GX SetScissor: 0x{:08X}", data);
+        
+        // Scissor box: x, y, width, height
+        if args.len() >= 4 {
+            let x = f32::from_bits(args[0]);
+            let y = f32::from_bits(args[1]);
+            let width = f32::from_bits(args[2]);
+            let height = f32::from_bits(args[3]);
+            self.rendering_state.scissor = Some((x, y, width, height));
+        } else {
+            // Extract from data if args not available
+            let x = ((data >> 12) & 0xFFF) as f32;
+            let y = (data & 0xFFF) as f32;
+            // Width and height would need additional data
+            self.rendering_state.scissor = Some((x, y, self.viewport.width, self.viewport.height));
+        }
+        
         Ok(())
     }
 
@@ -522,12 +624,46 @@ impl GXProcessor {
         let vertices = self.fetch_vertices(0, count)?;
         
         // Apply viewport and projection transformations
+        let projection_mat = Mat4::from_cols_array(&self.projection);
+        let viewport = (
+            self.viewport.x,
+            self.viewport.y,
+            self.viewport.width,
+            self.viewport.height,
+        );
+        
         let transformed_vertices: Vec<Vertex> = vertices
             .into_iter()
             .map(|mut v| {
-                // Apply projection matrix (simplified - full matrix multiplication would be here)
-                // For now, just store the vertices
-                // In a full implementation, we'd transform position by projection matrix
+                // Transform vertex position
+                let pos = Vec3::new(v.position[0], v.position[1], v.position[2]);
+                let (transformed_pos, w) = transform_vertex(
+                    pos,
+                    self.rendering_state.model_view,
+                    projection_mat,
+                    viewport,
+                );
+                
+                v.position[0] = transformed_pos.x;
+                v.position[1] = transformed_pos.y;
+                v.position[2] = transformed_pos.z;
+                
+                // Apply fog if enabled
+                if self.rendering_state.fog_enabled {
+                    let distance = w;
+                    let color = Vec4::new(
+                        v.color[0],
+                        v.color[1],
+                        v.color[2],
+                        v.color[3],
+                    );
+                    let fogged = self.rendering_state.apply_fog(color, distance);
+                    v.color[0] = fogged.x;
+                    v.color[1] = fogged.y;
+                    v.color[2] = fogged.z;
+                    v.color[3] = fogged.w;
+                }
+                
                 v
             })
             .collect();
@@ -677,6 +813,16 @@ impl GXProcessor {
         } else {
             None
         }
+    }
+
+    /// Get rendering state
+    pub fn rendering_state(&self) -> &GXRenderingState {
+        &self.rendering_state
+    }
+
+    /// Get mutable rendering state
+    pub fn rendering_state_mut(&mut self) -> &mut GXRenderingState {
+        &mut self.rendering_state
     }
 }
 
