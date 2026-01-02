@@ -14,7 +14,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 gilrs = "0.10"
 # Downgrade sdl2 to be compatible with minifb's sdl2-sys requirement
-sdl2 = "0.35"
+sdl2 = "0.38"
 hidapi = "2.0"
 image = "0.24"
 imageproc = "0.23"
