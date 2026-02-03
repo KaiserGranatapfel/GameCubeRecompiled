@@ -9,8 +9,8 @@ homepage.workspace = true
 description = "UI for GameCube static recompiler"
 
 [dependencies]
-gcrecomp-core = { path = "../gcrecomp-core" }
-gcrecomp-runtime = { path = "../gcrecomp-runtime" }
+gcrecomp-core = "0.0.1-alpha"
+gcrecomp-runtime = "0.0.1-alpha"
 iced = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
