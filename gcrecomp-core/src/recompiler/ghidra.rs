@@ -476,7 +476,7 @@ fn find_or_create_export_script(ghidra_path: &Path) -> Result<PathBuf> {
     }
 
     // Create the script if it doesn't exist
-    let script_content = include_str!("../../../scripts/ghidra_export.py");
+    let script_content = include_str!("../../scripts/ghidra_export.py");
     std::fs::write(&script_path, script_content)
         .context("Failed to create Ghidra export script")?;
     
