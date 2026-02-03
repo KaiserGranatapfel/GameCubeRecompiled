@@ -42,7 +42,7 @@ clap = { version = "4.5", features = ["derive"] }
 indicatif = "0.17"
 
 # UI dependencies
-iced = "0.12"
+iced = "0.14"
 winit = "0.30"
 # Downgrade wgpu to 0.19 to be compatible with iced 0.12's web-sys =0.3.67 requirement
 wgpu = "0.19"
