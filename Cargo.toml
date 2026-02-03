@@ -15,16 +15,16 @@ codegen-units = 1
 strip = true
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1-alpha"
 edition = "2021"
-authors = ["GCRecomp Contributors"]
+authors = ["Christopher Erleigh <christopher.erleigh@gmail.com>"]
 license = "CC0-1.0"
-repository = "https://github.com/yourusername/GCRecomp"
-homepage = "https://github.com/yourusername/GCRecomp"
+repository = "https://github.com/KaiserGranatapfel/GameCubeRecompiled"
+homepage = "https://github.com/KaiserGranatapfel/GameCubeRecompiled"
 documentation = "https://docs.rs/gcrecomp-core"
-keywords = ["gamecube", "recompiler", "powerpc", "rust", "emulation", "preservation"]
-categories = ["development-tools", "emulators", "system"]
-description = "Production-ready static recompiler for GameCube games to Rust"
+keywords = ["gamecube", "recompiler", "powerpc", "rust", "emulation"]
+categories = ["development-tools", "emulators"]
+description = "Static recompiler for GameCube games to Rust"
 
 [workspace.dependencies]
 # Core dependencies

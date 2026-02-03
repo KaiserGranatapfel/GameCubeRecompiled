@@ -3,12 +3,13 @@ pub mod sdl2;
 #[cfg(target_os = "windows")]
 pub mod xinput;
 
-use crate::input::controller::GameCubeInput;
 use anyhow::Result;
 
-pub trait Backend: Send + Sync {
+/// Input backend trait for controller input
+/// Note: Removed Send + Sync bounds as some backends (SDL2, gilrs) cannot be shared across threads
+pub trait Backend {
     fn update(&mut self) -> Result<()>;
-    fn enumerate_controllers(&self) -> Result<Vec<ControllerInfo>>;
+    fn enumerate_controllers(&mut self) -> Result<Vec<ControllerInfo>>;
     fn get_input(&self, controller_id: usize) -> Result<RawInput>;
 }
 

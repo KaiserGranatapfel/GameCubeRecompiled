@@ -4,11 +4,15 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Runtime library for GameCube recompiled games"
 
 [dependencies]
 anyhow = { workspace = true }
 log = { workspace = true }
 wgpu = { workspace = true }
+winit = { workspace = true }
 minifb = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -19,4 +23,5 @@ hidapi = "2.0"
 image = "0.24"
 imageproc = "0.23"
 bytemuck = "1.14"
+pollster = "0.4"
 

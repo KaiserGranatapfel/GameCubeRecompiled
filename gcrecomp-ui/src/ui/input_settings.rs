@@ -3,7 +3,7 @@ use crate::app::Message;
 use crate::config::GameConfig;
 use iced::{
     widget::{Button, Column, Container, Space, Text},
-    Element, Length, Renderer, Theme,
+    Element, Length,
 };
 
 pub struct InputSettings;

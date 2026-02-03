@@ -233,6 +233,10 @@ impl ControlFlowAnalyzer {
         }
         
         // Third pass: identify edges
+        // Collect updates to apply after iteration (avoids borrow checker issues)
+        let mut successor_updates: Vec<(usize, u32)> = Vec::new();
+        let mut predecessor_updates: Vec<(usize, u32)> = Vec::new();
+
         for (block_idx, block) in nodes.iter().enumerate() {
             let block_idx_u32: u32 = block_idx as u32;
             if let Some(last_inst) = block.instructions.last() {
@@ -243,17 +247,9 @@ impl ControlFlowAnalyzer {
                             to: target_block,
                             edge_type: EdgeType::Unconditional,
                         });
-                        // Update successors and predecessors
-                        if let Some(block_mut) = nodes.get_mut(block_idx) {
-                            if !block_mut.successors.contains(&target_block) {
-                                block_mut.successors.push(target_block);
-                            }
-                        }
-                        if let Some(target_block_mut) = nodes.get_mut(target_block as usize) {
-                            if !target_block_mut.predecessors.contains(&block_idx_u32) {
-                                target_block_mut.predecessors.push(block_idx_u32);
-                            }
-                        }
+                        // Queue updates for successors and predecessors
+                        successor_updates.push((block_idx, target_block));
+                        predecessor_updates.push((target_block as usize, block_idx_u32));
                     }
                 } else {
                     // Fall-through edge (no explicit branch, continue to next block)
@@ -264,17 +260,25 @@ impl ControlFlowAnalyzer {
                             to: next_block_id,
                             edge_type: EdgeType::Unconditional,
                         });
-                        if let Some(block_mut) = nodes.get_mut(block_idx) {
-                            if !block_mut.successors.contains(&next_block_id) {
-                                block_mut.successors.push(next_block_id);
-                            }
-                        }
-                        if let Some(next_block_mut) = nodes.get_mut(block_idx + 1) {
-                            if !next_block_mut.predecessors.contains(&block_idx_u32) {
-                                next_block_mut.predecessors.push(block_idx_u32);
-                            }
-                        }
+                        successor_updates.push((block_idx, next_block_id));
+                        predecessor_updates.push((block_idx + 1, block_idx_u32));
                     }
+                }
+            }
+        }
+
+        // Apply deferred updates
+        for (block_idx, successor) in successor_updates {
+            if let Some(block) = nodes.get_mut(block_idx) {
+                if !block.successors.contains(&successor) {
+                    block.successors.push(successor);
+                }
+            }
+        }
+        for (block_idx, predecessor) in predecessor_updates {
+            if let Some(block) = nodes.get_mut(block_idx) {
+                if !block.predecessors.contains(&predecessor) {
+                    block.predecessors.push(predecessor);
                 }
             }
         }

@@ -436,17 +436,19 @@ impl GhidraAnalysis {
 
 fn find_ghidra() -> Result<std::path::PathBuf> {
     // Check common Ghidra installation locations
-    let common_paths = [
-        "/usr/local/ghidra",
-        "/opt/ghidra",
-        "/Applications/ghidra",
-        std::env::var("GHIDRA_INSTALL_DIR")
-            .ok()
-            .map(|s| s.into()),
+    let common_paths: Vec<std::path::PathBuf> = vec![
+        "/usr/local/ghidra".into(),
+        "/opt/ghidra".into(),
+        "/Applications/ghidra".into(),
     ];
 
-    for path in common_paths.iter().flatten() {
-        let ghidra_path = Path::new(path);
+    // Also check environment variable
+    let env_path = std::env::var("GHIDRA_INSTALL_DIR").ok().map(std::path::PathBuf::from);
+
+    let all_paths = common_paths.into_iter().chain(env_path);
+
+    for path in all_paths {
+        let ghidra_path = Path::new(&path);
         if ghidra_path.join("support").join("analyzeHeadless").exists() {
             return Ok(ghidra_path.to_path_buf());
         }
@@ -474,7 +476,7 @@ fn find_or_create_export_script(ghidra_path: &Path) -> Result<PathBuf> {
     }
 
     // Create the script if it doesn't exist
-    let script_content = include_str!("../../scripts/ghidra_export.py");
+    let script_content = include_str!("../../../scripts/ghidra_export.py");
     std::fs::write(&script_path, script_content)
         .context("Failed to create Ghidra export script")?;
     

@@ -4,6 +4,7 @@ use crate::input::ControllerManager;
 use crate::memory::{ARam, DmaSystem, Ram, VRam};
 use crate::texture::TextureLoader;
 use anyhow::Result;
+use std::sync::Arc;
 
 pub struct Runtime {
     controller_manager: ControllerManager,
@@ -28,7 +29,7 @@ impl Runtime {
         })
     }
 
-    pub fn initialize_graphics(&mut self, window: &winit::window::Window) -> Result<()> {
+    pub fn initialize_graphics(&mut self, window: Arc<winit::window::Window>) -> Result<()> {
         self.renderer = Some(Renderer::new(window)?);
         Ok(())
     }

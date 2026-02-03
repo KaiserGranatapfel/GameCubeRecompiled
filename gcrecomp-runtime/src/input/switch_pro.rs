@@ -17,10 +17,11 @@ impl SwitchProController {
         const PRO_CONTROLLER_PRODUCT_ID: u16 = 0x2009;
 
         let device = api.open(NINTENDO_VENDOR_ID, PRO_CONTROLLER_PRODUCT_ID).ok();
+        let connected = device.is_some();
 
         Ok(Self {
             device,
-            connected: device.is_some(),
+            connected,
         })
     }
 
@@ -31,7 +32,7 @@ impl SwitchProController {
     pub fn read_input(&mut self) -> Result<SwitchProInput> {
         if let Some(ref device) = self.device {
             let mut buf = [0u8; 64];
-            let len = device.read_timeout(&mut buf, Duration::from_millis(16))?;
+            let len = device.read_timeout(&mut buf, 16)?;
 
             if len > 0 {
                 return Self::parse_input(&buf[..len]);

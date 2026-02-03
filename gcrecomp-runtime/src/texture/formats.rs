@@ -58,7 +58,7 @@ impl GameCubeTextureFormat {
         for y in 0..height {
             for x in 0..width {
                 let byte_idx = (y * width + x) / pixels_per_byte;
-                if byte_idx < data.len() {
+                if (byte_idx as usize) < data.len() {
                     let byte = data[byte_idx as usize];
                     let pixel_idx = (x % pixels_per_byte) as usize;
                     let intensity = if pixel_idx == 0 {

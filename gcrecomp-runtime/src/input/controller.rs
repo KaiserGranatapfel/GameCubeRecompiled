@@ -54,41 +54,41 @@ impl ControllerManager {
 
     pub fn update(&mut self) -> Result<()> {
         // Update all backends and detect new/removed controllers
+        // Collect controller IDs first to avoid borrow issues
+        let mut all_controller_infos: Vec<ControllerInfo> = Vec::new();
+
         for backend in &mut self.backends {
             backend.update()?;
-
-            // Check for new controllers
-            for controller in backend.enumerate_controllers()? {
-                if !self.controllers.contains_key(&controller.id) {
-                    let state = ControllerState {
-                        id: controller.id,
-                        info: controller.clone(),
-                        connected: true,
-                        last_update: std::time::Instant::now(),
-                    };
-                    self.controllers.insert(controller.id, state);
-
-                    // Load default profile or create new mapping
-                    self.load_default_mapping(controller.id)?;
-                }
-            }
-
-            // Check for disconnected controllers
-            let connected_ids: Vec<usize> = backend
-                .enumerate_controllers()?
-                .iter()
-                .map(|c| c.id)
-                .collect();
-
-            self.controllers.retain(|id, state| {
-                if !connected_ids.contains(id) {
-                    state.connected = false;
-                    false
-                } else {
-                    true
-                }
-            });
+            all_controller_infos.extend(backend.enumerate_controllers()?);
         }
+
+        // Check for new controllers
+        for controller in &all_controller_infos {
+            if !self.controllers.contains_key(&controller.id) {
+                let state = ControllerState {
+                    id: controller.id,
+                    info: controller.clone(),
+                    connected: true,
+                    last_update: std::time::Instant::now(),
+                };
+                self.controllers.insert(controller.id, state);
+
+                // Load default profile or create new mapping
+                self.load_default_mapping(controller.id)?;
+            }
+        }
+
+        // Check for disconnected controllers
+        let connected_ids: Vec<usize> = all_controller_infos.iter().map(|c| c.id).collect();
+
+        self.controllers.retain(|id, state| {
+            if !connected_ids.contains(id) {
+                state.connected = false;
+                false
+            } else {
+                true
+            }
+        });
 
         Ok(())
     }

@@ -14,7 +14,7 @@ pub fn analyze_dol(dol_file: &Path, use_reoxide: bool) -> Result<()> {
     let data = fs::read(dol_file)
         .with_context(|| format!("Failed to read DOL file: {}", dol_file.display()))?;
     
-    let dol = DolFile::parse(&data)
+    let dol = DolFile::parse(&data, dol_file.to_str().unwrap_or("unknown.dol"))
         .context("Failed to parse DOL file")?;
     
     println!("DOL file parsed successfully");

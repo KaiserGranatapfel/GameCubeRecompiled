@@ -1,8 +1,8 @@
 // Main menu screen
 use crate::app::Message;
 use iced::{
-    widget::{Button, Column, Container, Row, Space, Text},
-    Element, Length, Renderer, Theme,
+    widget::{Button, Column, Container, Space, Text},
+    Element, Length,
 };
 
 pub struct MainMenu;

@@ -75,9 +75,3 @@ impl From<std::io::Error> for RecompilerError {
     }
 }
 
-impl From<RecompilerError> for anyhow::Error {
-    #[cold] // Error paths are cold
-    fn from(err: RecompilerError) -> Self {
-        anyhow::Error::from(err)
-    }
-}

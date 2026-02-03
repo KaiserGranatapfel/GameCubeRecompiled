@@ -1,7 +1,7 @@
 // SDL2 backend for cross-platform controller support
 use crate::input::backends::{Backend, ControllerInfo, ControllerType, HatState, RawInput};
-use anyhow::{Context, Result};
-use sdl2::controller::GameControllerSubsystem;
+use anyhow::Result;
+use sdl2::GameControllerSubsystem;
 use std::collections::HashMap;
 
 pub struct SDL2Backend {
@@ -13,11 +13,12 @@ pub struct SDL2Backend {
 
 impl SDL2Backend {
     pub fn new() -> Result<Self> {
-        let sdl_context = sdl2::init().context("Failed to initialize SDL2")?;
+        let sdl_context = sdl2::init()
+            .map_err(|e| anyhow::anyhow!("Failed to initialize SDL2: {}", e))?;
 
         let controller_subsystem = sdl_context
             .game_controller()
-            .context("Failed to initialize SDL2 game controller subsystem")?;
+            .map_err(|e| anyhow::anyhow!("Failed to initialize SDL2 game controller subsystem: {}", e))?;
 
         Ok(Self {
             sdl_context,
@@ -34,7 +35,7 @@ impl Backend for SDL2Backend {
         Ok(())
     }
 
-    fn enumerate_controllers(&self) -> Result<Vec<ControllerInfo>> {
+    fn enumerate_controllers(&mut self) -> Result<Vec<ControllerInfo>> {
         let mut controllers = Vec::new();
         let num_joysticks = self
             .controller_subsystem

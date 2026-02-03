@@ -6,7 +6,7 @@ mod tests {
     #[test]
     fn test_parse_empty_dol() {
         let data = vec![0u8; 0x100];
-        let result = DolFile::parse(&data);
+        let result = DolFile::parse(&data, "test.dol");
         // Should handle gracefully or return error
         assert!(result.is_ok() || result.is_err());
     }

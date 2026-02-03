@@ -6,4 +6,5 @@ pub mod codegen;
 pub mod pipeline;
 pub mod optimizer;
 pub mod error;
+pub mod validator;
 

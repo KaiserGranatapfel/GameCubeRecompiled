@@ -2,8 +2,8 @@
 use crate::config::GameConfig;
 use crate::ui::main_menu::MainMenu;
 use iced::{
-    widget::{Button, Column, Container, Row, Text},
-    Application, Command, Element, Length, Renderer, Settings, Theme,
+    widget::{Container, Text},
+    Application, Command, Element, Length, Theme,
 };
 
 #[derive(Debug, Clone)]
@@ -74,6 +74,9 @@ impl Application for App {
             }
             Message::OpenInputSettings => {
                 self.current_screen = Screen::InputSettings;
+            }
+            Message::OpenControllerConfig => {
+                self.current_screen = Screen::ControllerConfig;
             }
             Message::OpenGameSettings => {
                 self.current_screen = Screen::GameSettings;

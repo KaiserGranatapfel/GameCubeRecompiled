@@ -8,7 +8,8 @@ mod tests {
         // addi r3, r4, 5
         // Opcode 14, RT=3, RA=4, SI=5
         let word = (14u32 << 26) | (3u32 << 21) | (4u32 << 16) | 5u32;
-        let result = Instruction::decode(word);
+        let address = 0x80000000u32;
+        let result = Instruction::decode(word, address);
         assert!(result.is_ok());
     }
 }

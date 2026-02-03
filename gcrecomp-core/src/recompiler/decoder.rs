@@ -1136,20 +1136,19 @@ impl Instruction {
             address,
         })
     }
-}
 
-/// Decode extended opcodes (opcode 31 instructions).
-///
-/// Extended opcodes use a secondary opcode field in bits 1-10 of the instruction word.
-/// This function handles arithmetic, logical, shift, rotate, floating-point, and system instructions.
-///
-/// # Arguments
-/// * `word` - 32-bit instruction word with opcode 31
-///
-/// # Returns
-/// `Result<(InstructionType, SmallVec<[Operand; 4]>)>` - Instruction type and operands
-#[inline] // Hot path for extended opcodes
-fn decode_extended(word: u32) -> Result<(InstructionType, SmallVec<[Operand; 4]>)> {
+    /// Decode extended opcodes (opcode 31 instructions).
+    ///
+    /// Extended opcodes use a secondary opcode field in bits 1-10 of the instruction word.
+    /// This function handles arithmetic, logical, shift, rotate, floating-point, and system instructions.
+    ///
+    /// # Arguments
+    /// * `word` - 32-bit instruction word with opcode 31
+    ///
+    /// # Returns
+    /// `Result<(InstructionType, SmallVec<[Operand; 4]>)>` - Instruction type and operands
+    #[inline] // Hot path for extended opcodes
+    fn decode_extended(word: u32) -> Result<(InstructionType, SmallVec<[Operand; 4]>)> {
     // Extract secondary opcode (bits 1-10)
     let extended_opcode: u32 = (word >> 1) & 0x3FF;
     
@@ -2442,7 +2441,7 @@ fn decode_extended(word: u32) -> Result<(InstructionType, SmallVec<[Operand; 4]>
         // SPR encoding: ((SPR[0:4] << 5) | SPR[5:9])
         339 => {
             let rt: u8 = ((word >> 21) & 0x1F) as u8;
-            let spr: u16 = (((word >> 16) & 0x1F) << 5) | ((word >> 11) & 0x1F);
+            let spr: u16 = ((((word >> 16) & 0x1F) << 5) | ((word >> 11) & 0x1F)) as u16;
             Ok((
                 InstructionType::System,
                 SmallVec::from_slice(&[
@@ -2451,12 +2450,12 @@ fn decode_extended(word: u32) -> Result<(InstructionType, SmallVec<[Operand; 4]>
                 ]),
             ))
         }
-        
+
         // Extended opcode 467: Move to special-purpose register (mtspr)
         // Format: mtspr SPR, RS
         467 => {
             let rs: u8 = ((word >> 21) & 0x1F) as u8;
-            let spr: u16 = (((word >> 16) & 0x1F) << 5) | ((word >> 11) & 0x1F);
+            let spr: u16 = ((((word >> 16) & 0x1F) << 5) | ((word >> 11) & 0x1F)) as u16;
             Ok((
                 InstructionType::System,
                 SmallVec::from_slice(&[
@@ -2848,6 +2847,7 @@ fn decode_extended(word: u32) -> Result<(InstructionType, SmallVec<[Operand; 4]>
         
         // Unknown extended opcode
         _ => Ok((InstructionType::Unknown, SmallVec::new())),
+    }
     }
 }
 

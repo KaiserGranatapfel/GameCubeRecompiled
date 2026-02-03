@@ -1,6 +1,9 @@
 // CLI application
+mod commands;
+mod output;
+
 use clap::Parser;
-use gcrecomp_cli::commands::{analyze_dol, build_dol, recompile_dol};
+use commands::{analyze_dol, build_dol, recompile_dol};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 

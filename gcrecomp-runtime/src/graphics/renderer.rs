@@ -4,6 +4,7 @@ use crate::graphics::gx::GXProcessor;
 use crate::graphics::shaders::ShaderManager;
 use crate::graphics::upscaler::Upscaler;
 use anyhow::Result;
+use std::sync::Arc;
 use wgpu::*;
 
 pub struct Renderer {
@@ -17,12 +18,14 @@ pub struct Renderer {
     target_resolution: (u32, u32),
     gx_processor: GXProcessor,
     shader_manager: ShaderManager,
+    _window: Arc<winit::window::Window>,
 }
 
 impl Renderer {
-    pub fn new(window: &winit::window::Window) -> Result<Self> {
+    pub fn new(window: Arc<winit::window::Window>) -> Result<Self> {
         let instance = Instance::new(InstanceDescriptor::default());
-        let surface = instance.create_surface(window)?;
+        // SAFETY: The window is stored in Arc in the struct, ensuring it outlives the surface
+        let surface = instance.create_surface(window.clone())?;
 
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
@@ -34,8 +37,8 @@ impl Renderer {
         let (device, queue) = pollster::block_on(adapter.request_device(
             &DeviceDescriptor {
                 label: None,
-                features: Features::empty(),
-                limits: Limits::default(),
+                required_features: Features::empty(),
+                required_limits: Limits::default(),
             },
             None,
         ))?;
@@ -96,6 +99,7 @@ impl Renderer {
             target_resolution: (size.width, size.height),
             gx_processor,
             shader_manager,
+            _window: window,
         })
     }
 

@@ -149,7 +149,7 @@ impl RecompilationPipeline {
                         name: p.name.clone(),
                         type_info: crate::recompiler::analysis::TypeInfo::Unknown,
                         register: None,
-                        stack_offset: p.offset,
+                        stack_offset: p.offset.unwrap_or(0),
                     }
                 }).collect(),
                 return_type: None,
@@ -269,35 +269,32 @@ impl RecompilationPipeline {
     #[inline] // May be called frequently
     fn decode_all_instructions(dol_file: &DolFile) -> Result<Vec<DecodedInstruction>> {
         // Estimate total instruction count for pre-allocation
+        // Only text sections are executable
         let mut estimated_count: usize = 0usize;
-        for section in dol_file.sections.iter() {
-            if section.executable {
-                estimated_count = estimated_count.wrapping_add(section.data.len() / 4usize);
-            }
+        for section in dol_file.text_sections.iter() {
+            estimated_count = estimated_count.wrapping_add(section.data.len() / 4usize);
         }
-        
+
         // Pre-allocate vector with estimated capacity
         let mut instructions: Vec<DecodedInstruction> = Vec::with_capacity(estimated_count);
-        
-        // Decode instructions from all sections with address tracking
-        for section in dol_file.sections.iter() {
-            if section.executable {
-                let data: &[u8] = &section.data;
-                let section_address: u32 = section.address;
-                
-                // Decode each 4-byte instruction chunk
-                for (chunk_index, chunk) in data.chunks_exact(4usize).enumerate() {
-                    let word: u32 = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                    // Calculate instruction address: section base + offset
-                    let instruction_address: u32 = section_address.wrapping_add((chunk_index * 4usize) as u32);
-                    
-                    if let Ok(decoded) = crate::recompiler::decoder::Instruction::decode(word, instruction_address) {
-                        instructions.push(decoded);
-                    }
+
+        // Decode instructions from text sections (executable sections)
+        for section in dol_file.text_sections.iter() {
+            let data: &[u8] = &section.data;
+            let section_address: u32 = section.address;
+
+            // Decode each 4-byte instruction chunk
+            for (chunk_index, chunk) in data.chunks_exact(4usize).enumerate() {
+                let word: u32 = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                // Calculate instruction address: section base + offset
+                let instruction_address: u32 = section_address.wrapping_add((chunk_index * 4usize) as u32);
+
+                if let Ok(decoded) = crate::recompiler::decoder::Instruction::decode(word, instruction_address) {
+                    instructions.push(decoded);
                 }
             }
         }
-        
+
         Ok(instructions)
     }
     

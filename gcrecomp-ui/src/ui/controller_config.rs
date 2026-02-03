@@ -2,26 +2,14 @@
 use crate::app::Message;
 use crate::config::GameConfig;
 use iced::{
-    widget::{Button, Checkbox, Column, Container, Row, Slider, Space, Text},
-    Element, Length, Renderer, Theme,
+    widget::{Button, Column, Container, Row, Space, Text},
+    Element, Length,
 };
 
-pub struct ControllerConfigUI {
-    selected_controller: Option<usize>,
-    mapping_mode: bool,
-    test_mode: bool,
-}
+pub struct ControllerConfigUI;
 
 impl ControllerConfigUI {
-    pub fn new() -> Self {
-        Self {
-            selected_controller: None,
-            mapping_mode: false,
-            test_mode: false,
-        }
-    }
-
-    pub fn view(config: &GameConfig) -> Element<'static, Message> {
+    pub fn view(_config: &GameConfig) -> Element<'static, Message> {
         let content = Column::new()
             .spacing(20)
             .push(Text::new("Controller Configuration").size(32))
@@ -61,20 +49,10 @@ impl ControllerConfigUI {
             .push(
                 Column::new()
                     .spacing(10)
-                    .push(
-                        Row::new()
-                            .spacing(10)
-                            .push(Text::new("Left Stick Dead Zone:"))
-                            .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0))),
-                    )
-                    .push(
-                        Row::new()
-                            .spacing(10)
-                            .push(Text::new("Right Stick Dead Zone:"))
-                            .push(Slider::new(0.0..=1.0, 0.15, |_| {}).width(Length::Fixed(200.0))),
-                    )
-                    .push(Checkbox::new("Invert Y Axis", false))
-                    .push(Checkbox::new("Enable Vibration", true)),
+                    .push(Text::new("Left Stick Dead Zone: 15%"))
+                    .push(Text::new("Right Stick Dead Zone: 15%"))
+                    .push(Text::new("Invert Y Axis: No"))
+                    .push(Text::new("Enable Vibration: Yes")),
             )
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
@@ -101,7 +79,7 @@ impl ControllerConfigUI {
     }
 }
 
-fn create_mapping_row(label: &str, button_text: &str) -> Row<'static, Message> {
+fn create_mapping_row(label: &'static str, button_text: &'static str) -> Row<'static, Message> {
     Row::new()
         .spacing(10)
         .push(Text::new(label).width(Length::Fixed(100.0)))

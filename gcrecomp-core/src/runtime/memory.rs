@@ -425,15 +425,9 @@ impl MemoryManager {
             anyhow::bail!("Bulk copy out of bounds");
         }
         
-        // Use optimized copy if ranges don't overlap
-        if dest_offset < src_offset || dest_offset >= src_offset.wrapping_add(len) {
-            self.ram[dest_offset..dest_offset.wrapping_add(len)]
-                .copy_from_slice(&self.ram[src_offset..src_offset.wrapping_add(len)]);
-        } else {
-            // Handle overlapping ranges (copy backwards or use temporary buffer)
-            let temp: Vec<u8> = self.ram[src_offset..src_offset.wrapping_add(len)].to_vec();
-            self.ram[dest_offset..dest_offset.wrapping_add(len)].copy_from_slice(&temp);
-        }
+        // Always use temporary buffer to avoid borrow checker issues with overlapping slices
+        let temp: Vec<u8> = self.ram[src_offset..src_offset.wrapping_add(len)].to_vec();
+        self.ram[dest_offset..dest_offset.wrapping_add(len)].copy_from_slice(&temp);
         
         Ok(())
     }

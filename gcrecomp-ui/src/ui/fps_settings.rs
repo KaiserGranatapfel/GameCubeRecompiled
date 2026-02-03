@@ -2,15 +2,15 @@
 use crate::app::Message;
 use crate::config::GameConfig;
 use iced::{
-    widget::{Button, Column, Container, Row, Row as IcedRow, Slider, Space, Text},
-    Element, Length, Renderer, Theme,
+    widget::{Button, Column, Container, Row, Space, Text},
+    Element, Length,
 };
 
 pub struct FpsSettings;
 
 impl FpsSettings {
     pub fn view(config: &GameConfig) -> Element<'static, Message> {
-        let fps_limit_text = config
+        let fps_limit_text: String = config
             .fps_limit
             .map(|f| format!("{} FPS", f))
             .unwrap_or_else(|| "Unlimited".to_string());
@@ -20,10 +20,10 @@ impl FpsSettings {
             .push(Text::new("FPS Settings").size(32))
             .push(Space::with_height(Length::Fixed(20.0)))
             .push(
-                IcedRow::new()
+                Row::new()
                     .spacing(10)
                     .push(Text::new("FPS Limit:"))
-                    .push(Text::new(&fps_limit_text)),
+                    .push(Text::new(fps_limit_text)),
             )
             .push(
                 Button::new(Text::new("30 FPS")).on_press(Message::ConfigChanged({

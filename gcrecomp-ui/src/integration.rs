@@ -1,7 +1,7 @@
 // Game integration hooks
 use anyhow::Result;
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event::{ElementState, WindowEvent};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::Window;
 
 pub struct GameIntegration {
@@ -17,17 +17,17 @@ impl GameIntegration {
 
     pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
         match event {
-            WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        virtual_keycode: Some(VirtualKeyCode::Escape),
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } => {
-                self.menu_visible = !self.menu_visible;
-                true // Event handled, don't pass to game
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed
+                    && event.logical_key == Key::Named(NamedKey::Escape)
+                {
+                    self.menu_visible = !self.menu_visible;
+                    return true; // Event handled, don't pass to game
+                }
+                if self.menu_visible {
+                    return true; // Consume keyboard input when menu is visible
+                }
+                false
             }
             _ if self.menu_visible => {
                 // If menu is visible, consume all input events
@@ -46,13 +46,13 @@ impl GameIntegration {
     }
 }
 
-pub fn hook_rendering_pipeline(window: &Window) -> Result<()> {
+pub fn hook_rendering_pipeline(_window: &Window) -> Result<()> {
     // In a real implementation, this would hook into the game's rendering pipeline
     // For now, we'll use iced's built-in rendering
     Ok(())
 }
 
-pub fn overlay_menu(window: &Window) -> Result<()> {
+pub fn overlay_menu(_window: &Window) -> Result<()> {
     // The menu overlay is handled by the iced Application
     // This function can be used for additional overlay rendering if needed
     Ok(())

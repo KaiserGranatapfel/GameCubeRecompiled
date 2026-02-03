@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "UI for GameCube static recompiler"
 
 [dependencies]
 gcrecomp-core = { path = "../gcrecomp-core" }

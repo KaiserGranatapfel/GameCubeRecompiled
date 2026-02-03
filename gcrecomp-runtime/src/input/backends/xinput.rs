@@ -25,7 +25,7 @@ impl Backend for XInputBackend {
         Ok(())
     }
 
-    fn enumerate_controllers(&self) -> Result<Vec<ControllerInfo>> {
+    fn enumerate_controllers(&mut self) -> Result<Vec<ControllerInfo>> {
         let mut controllers = Vec::new();
 
         // XInput supports 4 controllers (0-3)
