@@ -45,7 +45,7 @@ indicatif = "0.17"
 iced = "0.12"
 winit = "0.30"
 # Downgrade wgpu to 0.19 to be compatible with iced 0.12's web-sys =0.3.67 requirement
-wgpu = "0.19"
+wgpu = "28.0"
 
 # Runtime dependencies
 minifb = "0.25"
