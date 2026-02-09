@@ -17,6 +17,7 @@ pub enum Message {
     OpenGameSettings,
     CloseMenu,
     ConfigChanged(GameConfig),
+    OpenLuaScreen(String),
 }
 
 pub struct App {
@@ -25,7 +26,7 @@ pub struct App {
     config: GameConfig,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Screen {
     MainMenu,
     FpsSettings,
@@ -34,6 +35,7 @@ enum Screen {
     InputSettings,
     GameSettings,
     ControllerConfig,
+    LuaScreen(String),
 }
 
 impl Application for App {
@@ -91,6 +93,9 @@ impl Application for App {
                     eprintln!("Failed to save config: {}", e);
                 }
             }
+            Message::OpenLuaScreen(id) => {
+                self.current_screen = Screen::LuaScreen(id);
+            }
         }
         Command::none()
     }
@@ -117,6 +122,13 @@ impl Application for App {
                 crate::ui::controller_config::ControllerConfigUI::view(&self.config)
             }
             Screen::GameSettings => crate::ui::game_settings::GameSettings::view(&self.config),
+            Screen::LuaScreen(ref id) => {
+                // Render a placeholder for Lua-defined screens
+                iced::widget::Column::new()
+                    .push(Text::new(format!("Lua Screen: {}", id)))
+                    .push(Text::new("(Lua-defined content rendered here)"))
+                    .into()
+            }
         };
 
         Container::new(content)

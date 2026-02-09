@@ -12,5 +12,6 @@ path = "src/main.rs"
 [dependencies]
 gcrecomp-runtime = { path = "../gcrecomp-runtime" }
 gcrecomp-ui = { path = "../gcrecomp-ui" }
+gcrecomp-lua = { path = "../gcrecomp-lua" }
 log = { workspace = true }
 
