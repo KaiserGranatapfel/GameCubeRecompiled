@@ -6,13 +6,19 @@ use winit::window::Window;
 
 pub struct GameIntegration {
     menu_visible: bool,
+    lua_event_handler: Option<Box<dyn Fn(&str) -> bool + Send>>,
 }
 
 impl GameIntegration {
     pub fn new() -> Self {
         Self {
             menu_visible: false,
+            lua_event_handler: None,
         }
+    }
+
+    pub fn set_lua_event_handler(&mut self, handler: Box<dyn Fn(&str) -> bool + Send>) {
+        self.lua_event_handler = Some(handler);
     }
 
     pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
@@ -25,6 +31,12 @@ impl GameIntegration {
                     return true; // Event handled, don't pass to game
                 }
                 if self.menu_visible {
+                    // Try Lua handler first
+                    if let Some(ref handler) = self.lua_event_handler {
+                        if handler("keyboard") {
+                            return true;
+                        }
+                    }
                     return true; // Consume keyboard input when menu is visible
                 }
                 false

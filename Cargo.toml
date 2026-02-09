@@ -4,6 +4,8 @@ members = [
     "gcrecomp-cli",
     "gcrecomp-ui",
     "gcrecomp-runtime",
+    "gcrecomp-lua",
+    "gcrecomp-web",
     "game",
 ]
 resolver = "2"
@@ -13,6 +15,7 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+panic = "abort"
 
 [workspace.package]
 version = "0.0.1-alpha"
@@ -53,4 +56,16 @@ minifb = "0.25"
 # Memory optimization dependencies
 smallvec = "1.13"
 bitvec = "1.0"
+
+# Lua scripting
+mlua = { version = "0.10", features = ["lua54", "vendored", "serialize", "send"] }
+
+# Verification
+crc32fast = "1.4"
+sha2 = "0.10"
+
+# Web server
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
 
