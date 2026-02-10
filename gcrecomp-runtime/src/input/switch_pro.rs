@@ -1,7 +1,6 @@
 // Nintendo Switch Pro Controller support
 use anyhow::Result;
 use hidapi::HidApi;
-use std::time::Duration;
 
 pub struct SwitchProController {
     device: Option<hidapi::HidDevice>,
@@ -19,10 +18,7 @@ impl SwitchProController {
         let device = api.open(NINTENDO_VENDOR_ID, PRO_CONTROLLER_PRODUCT_ID).ok();
         let connected = device.is_some();
 
-        Ok(Self {
-            device,
-            connected,
-        })
+        Ok(Self { device, connected })
     }
 
     pub fn is_connected(&self) -> bool {

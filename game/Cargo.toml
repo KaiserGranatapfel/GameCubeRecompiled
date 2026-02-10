@@ -10,8 +10,12 @@ name = "game"
 path = "src/main.rs"
 
 [dependencies]
+gcrecomp-core = { path = "../gcrecomp-core" }
 gcrecomp-runtime = { path = "../gcrecomp-runtime" }
 gcrecomp-ui = { path = "../gcrecomp-ui" }
 gcrecomp-lua = { path = "../gcrecomp-lua" }
 log = { workspace = true }
-
+env_logger = "0.11"
+anyhow = { workspace = true }
+winit = { workspace = true }
+wgpu = { workspace = true }

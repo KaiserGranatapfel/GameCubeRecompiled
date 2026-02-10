@@ -1,5 +1,5 @@
 // Gilrs backend for cross-platform gamepad support
-use crate::input::backends::{Backend, ControllerInfo, ControllerType, HatState, RawInput};
+use crate::input::backends::{Backend, ControllerInfo, ControllerType, RawInput};
 use anyhow::Result;
 use gilrs::{Axis, Gilrs};
 
@@ -44,7 +44,9 @@ impl Backend for GilrsBackend {
 
     fn get_input(&self, controller_id: usize) -> Result<RawInput> {
         // Find gamepad by iterating gamepads (gilrs 0.10 API)
-        let gamepad = self.gilrs.gamepads()
+        let gamepad = self
+            .gilrs
+            .gamepads()
             .find(|(id, _)| usize::from(*id) == controller_id)
             .map(|(_, g)| g);
 
@@ -81,7 +83,7 @@ impl Backend for GilrsBackend {
             // Read triggers
             let left_trigger = gamepad.value(Axis::LeftZ);
             let right_trigger = gamepad.value(Axis::RightZ);
-            triggers.push((left_trigger + 1.0) / 2.0);  // Normalize to 0-1
+            triggers.push((left_trigger + 1.0) / 2.0); // Normalize to 0-1
             triggers.push((right_trigger + 1.0) / 2.0); // Normalize to 0-1
 
             Ok(RawInput {

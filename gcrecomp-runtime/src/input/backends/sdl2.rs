@@ -1,30 +1,30 @@
 // SDL2 backend for cross-platform controller support
-use crate::input::backends::{Backend, ControllerInfo, ControllerType, HatState, RawInput};
+use crate::input::backends::{Backend, ControllerInfo, ControllerType, RawInput};
 use anyhow::Result;
 use sdl2::GameControllerSubsystem;
 use std::collections::HashMap;
 
 pub struct SDL2Backend {
-    sdl_context: sdl2::Sdl,
+    _sdl_context: sdl2::Sdl,
     controller_subsystem: GameControllerSubsystem,
     controllers: HashMap<usize, sdl2::controller::GameController>,
-    next_id: usize,
+    _next_id: usize,
 }
 
 impl SDL2Backend {
     pub fn new() -> Result<Self> {
-        let sdl_context = sdl2::init()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize SDL2: {}", e))?;
+        let sdl_context =
+            sdl2::init().map_err(|e| anyhow::anyhow!("Failed to initialize SDL2: {}", e))?;
 
-        let controller_subsystem = sdl_context
-            .game_controller()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize SDL2 game controller subsystem: {}", e))?;
+        let controller_subsystem = sdl_context.game_controller().map_err(|e| {
+            anyhow::anyhow!("Failed to initialize SDL2 game controller subsystem: {}", e)
+        })?;
 
         Ok(Self {
-            sdl_context,
+            _sdl_context: sdl_context,
             controller_subsystem,
             controllers: HashMap::new(),
-            next_id: 0,
+            _next_id: 0,
         })
     }
 }

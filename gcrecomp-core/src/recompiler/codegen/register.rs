@@ -47,7 +47,7 @@ impl RegisterAllocator {
             spilled_registers: Vec::new(),
         }
     }
-    
+
     /// Allocate a Rust variable name for a PowerPC register.
     ///
     /// # Algorithm
@@ -77,7 +77,7 @@ impl RegisterAllocator {
             })
             .clone()
     }
-    
+
     /// Spill a register to the stack.
     ///
     /// # Algorithm

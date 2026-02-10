@@ -6,6 +6,12 @@ pub struct ARam {
     size: usize,
 }
 
+impl Default for ARam {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ARam {
     pub fn new() -> Self {
         const ARAM_SIZE: usize = 16 * 1024 * 1024; // 16MB

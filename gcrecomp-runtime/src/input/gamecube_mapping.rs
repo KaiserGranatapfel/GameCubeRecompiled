@@ -151,21 +151,21 @@ impl GameCubeMapping {
     }
 
     pub fn map_to_gamecube(&self, input: &RawInput) -> GameCubeInput {
-        let mut buttons = GameCubeButtons::default();
-
         // Map buttons
-        buttons.a = self.get_button_state(&self.button_mappings.a, input);
-        buttons.b = self.get_button_state(&self.button_mappings.b, input);
-        buttons.x = self.get_button_state(&self.button_mappings.x, input);
-        buttons.y = self.get_button_state(&self.button_mappings.y, input);
-        buttons.start = self.get_button_state(&self.button_mappings.start, input);
-        buttons.d_up = self.get_button_state(&self.button_mappings.d_up, input);
-        buttons.d_down = self.get_button_state(&self.button_mappings.d_down, input);
-        buttons.d_left = self.get_button_state(&self.button_mappings.d_left, input);
-        buttons.d_right = self.get_button_state(&self.button_mappings.d_right, input);
-        buttons.l = self.get_button_state(&self.button_mappings.l, input);
-        buttons.r = self.get_button_state(&self.button_mappings.r, input);
-        buttons.z = self.get_button_state(&self.button_mappings.z, input);
+        let buttons = GameCubeButtons {
+            a: self.get_button_state(&self.button_mappings.a, input),
+            b: self.get_button_state(&self.button_mappings.b, input),
+            x: self.get_button_state(&self.button_mappings.x, input),
+            y: self.get_button_state(&self.button_mappings.y, input),
+            start: self.get_button_state(&self.button_mappings.start, input),
+            d_up: self.get_button_state(&self.button_mappings.d_up, input),
+            d_down: self.get_button_state(&self.button_mappings.d_down, input),
+            d_left: self.get_button_state(&self.button_mappings.d_left, input),
+            d_right: self.get_button_state(&self.button_mappings.d_right, input),
+            l: self.get_button_state(&self.button_mappings.l, input),
+            r: self.get_button_state(&self.button_mappings.r, input),
+            z: self.get_button_state(&self.button_mappings.z, input),
+        };
 
         // Map sticks with dead zones and sensitivity
         let left_stick = self.map_stick(

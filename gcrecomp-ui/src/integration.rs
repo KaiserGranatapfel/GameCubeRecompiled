@@ -4,20 +4,20 @@ use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::Window;
 
+type LuaEventHandler = Box<dyn Fn(&str) -> bool + Send>;
+
+#[derive(Default)]
 pub struct GameIntegration {
     menu_visible: bool,
-    lua_event_handler: Option<Box<dyn Fn(&str) -> bool + Send>>,
+    lua_event_handler: Option<LuaEventHandler>,
 }
 
 impl GameIntegration {
     pub fn new() -> Self {
-        Self {
-            menu_visible: false,
-            lua_event_handler: None,
-        }
+        Self::default()
     }
 
-    pub fn set_lua_event_handler(&mut self, handler: Box<dyn Fn(&str) -> bool + Send>) {
+    pub fn set_lua_event_handler(&mut self, handler: LuaEventHandler) {
         self.lua_event_handler = Some(handler);
     }
 

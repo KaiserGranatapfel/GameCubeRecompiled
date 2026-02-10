@@ -1,5 +1,6 @@
 // Calling convention helpers
 use crate::runtime::context::CpuContext;
+use crate::runtime::memory::MemoryManager;
 
 /// PowerPC calling convention helper
 pub struct CallingConvention;
@@ -10,11 +11,11 @@ impl CallingConvention {
     pub fn setup_stack_frame(ctx: &mut CpuContext, frame_size: u32) {
         // Save old stack pointer
         let old_sp = ctx.get_register(1);
-        
+
         // Allocate new stack frame
         let new_sp = old_sp.wrapping_sub(frame_size);
         ctx.set_register(1, new_sp);
-        
+
         // Store old stack pointer in the new frame (standard PowerPC convention)
         // This would typically be done with stwu instruction
     }
@@ -49,5 +50,12 @@ impl CallingConvention {
     pub fn get_return_value(ctx: &CpuContext) -> u32 {
         ctx.get_register(3)
     }
-}
 
+    /// Extract a null-terminated string argument from memory.
+    /// The string address is taken from the register corresponding to `arg_num`
+    /// (r3 for arg 0, r4 for arg 1, etc.).
+    pub fn get_string_argument(ctx: &CpuContext, memory: &MemoryManager, arg_num: u8) -> String {
+        let addr = Self::get_argument(ctx, arg_num);
+        crate::runtime::sdk::os::read_c_string(memory, addr)
+    }
+}

@@ -9,8 +9,9 @@ homepage.workspace = true
 description = "UI for GameCube static recompiler"
 
 [dependencies]
-gcrecomp-core = "0.0.1-alpha"
-gcrecomp-runtime = "0.0.1-alpha"
+gcrecomp-core = { path = "../gcrecomp-core" }
+gcrecomp-runtime = { path = "../gcrecomp-runtime" }
+gcrecomp-lua = { path = "../gcrecomp-lua" }
 iced = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
@@ -19,4 +20,3 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 dirs = "5.0"
-

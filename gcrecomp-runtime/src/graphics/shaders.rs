@@ -2,15 +2,14 @@
 use anyhow::Result;
 use wgpu::*;
 
+#[derive(Default)]
 pub struct ShaderManager {
     shaders: std::collections::HashMap<String, ShaderModule>,
 }
 
 impl ShaderManager {
     pub fn new() -> Self {
-        Self {
-            shaders: std::collections::HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn load_shader(&mut self, device: &Device, name: &str, source: &str) -> Result<()> {

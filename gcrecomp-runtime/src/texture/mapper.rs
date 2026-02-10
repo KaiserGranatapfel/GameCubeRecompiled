@@ -1,8 +1,13 @@
 // Texture mapping
-use anyhow::Result;
 
 pub struct TextureMapper {
     // Handles texture coordinate mapping and UV transformations
+}
+
+impl Default for TextureMapper {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TextureMapper {

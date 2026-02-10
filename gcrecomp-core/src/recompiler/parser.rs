@@ -83,7 +83,11 @@ impl DolFile {
     pub fn parse(data: &[u8], path: &str) -> Result<Self> {
         const MIN_DOL_SIZE: usize = 0x100usize;
         if data.len() < MIN_DOL_SIZE {
-            anyhow::bail!("DOL file too small: {} bytes (minimum {} bytes)", data.len(), MIN_DOL_SIZE);
+            anyhow::bail!(
+                "DOL file too small: {} bytes (minimum {} bytes)",
+                data.len(),
+                MIN_DOL_SIZE
+            );
         }
 
         let mut cursor: Cursor<&[u8]> = Cursor::new(data);
@@ -143,9 +147,14 @@ impl DolFile {
             if text_offsets[i] != 0u32 && text_sizes[i] != 0u32 {
                 let offset: usize = text_offsets[i] as usize;
                 let size: usize = text_sizes[i] as usize;
-                
+
                 if offset.wrapping_add(size) > data.len() {
-                    anyhow::bail!("Text section {} extends beyond file: offset {}, size {}", i, offset, size);
+                    anyhow::bail!(
+                        "Text section {} extends beyond file: offset {}, size {}",
+                        i,
+                        offset,
+                        size
+                    );
                 }
 
                 let section_data: Vec<u8> = data[offset..offset.wrapping_add(size)].to_vec();
@@ -165,9 +174,14 @@ impl DolFile {
             if data_offsets[i] != 0u32 && data_sizes[i] != 0u32 {
                 let offset: usize = data_offsets[i] as usize;
                 let size: usize = data_sizes[i] as usize;
-                
+
                 if offset.wrapping_add(size) > data.len() {
-                    anyhow::bail!("Data section {} extends beyond file: offset {}, size {}", i, offset, size);
+                    anyhow::bail!(
+                        "Data section {} extends beyond file: offset {}, size {}",
+                        i,
+                        offset,
+                        size
+                    );
                 }
 
                 let section_data: Vec<u8> = data[offset..offset.wrapping_add(size)].to_vec();
@@ -202,7 +216,8 @@ impl DolFile {
     /// ```
     #[inline] // Simple function - may be inlined
     pub fn get_all_sections(&self) -> Vec<Section> {
-        let mut all: Vec<Section> = Vec::with_capacity(self.text_sections.len() + self.data_sections.len());
+        let mut all: Vec<Section> =
+            Vec::with_capacity(self.text_sections.len() + self.data_sections.len());
         all.extend_from_slice(&self.text_sections);
         all.extend_from_slice(&self.data_sections);
         all

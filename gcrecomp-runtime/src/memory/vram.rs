@@ -6,6 +6,12 @@ pub struct VRam {
     size: usize,
 }
 
+impl Default for VRam {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VRam {
     pub fn new() -> Self {
         const VRAM_SIZE: usize = 2 * 1024 * 1024; // 2MB

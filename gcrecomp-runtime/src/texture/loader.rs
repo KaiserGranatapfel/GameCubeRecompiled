@@ -8,6 +8,12 @@ pub struct TextureLoader {
     cache: TextureCache,
 }
 
+impl Default for TextureLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TextureLoader {
     pub fn new() -> Self {
         Self {
@@ -69,7 +75,7 @@ impl TextureLoader {
 impl GameCubeTextureFormat {
     pub fn bytes_per_pixel(&self) -> u32 {
         match self {
-            Self::CMPR => 0, // Compressed, variable
+            Self::Cmpr => 0, // Compressed, variable
             Self::I4 => 1,
             Self::I8 => 1,
             Self::IA4 => 1,

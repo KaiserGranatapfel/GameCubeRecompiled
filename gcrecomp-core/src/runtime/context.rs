@@ -1,15 +1,15 @@
 // CPU context
 #[derive(Debug, Clone)]
 pub struct CpuContext {
-    pub gpr: [u32; 32],        // General Purpose Registers (r0-r31)
-    pub pc: u32,               // Program Counter
-    pub lr: u32,               // Link Register
-    pub ctr: u32,              // Count Register
-    pub cr: u32,               // Condition Register
-    pub xer: u32,              // Fixed-Point Exception Register
-    pub fpscr: u32,            // Floating-Point Status and Control Register
-    pub fpr: [f64; 32],       // Floating-Point Registers
-    pub msr: u32,              // Machine State Register
+    pub gpr: [u32; 32], // General Purpose Registers (r0-r31)
+    pub pc: u32,        // Program Counter
+    pub lr: u32,        // Link Register
+    pub ctr: u32,       // Count Register
+    pub cr: u32,        // Condition Register
+    pub xer: u32,       // Fixed-Point Exception Register
+    pub fpscr: u32,     // Floating-Point Status and Control Register
+    pub fpr: [f64; 32], // Floating-Point Registers
+    pub msr: u32,       // Machine State Register
 }
 
 impl CpuContext {
@@ -76,4 +76,3 @@ impl Default for CpuContext {
         Self::new()
     }
 }
-

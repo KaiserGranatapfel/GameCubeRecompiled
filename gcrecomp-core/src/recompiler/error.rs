@@ -24,43 +24,43 @@ pub enum RecompilerError {
     /// Occurs when the DOL file format is invalid or cannot be parsed.
     #[error("DOL parsing error: {0}")]
     DolParseError(String),
-    
+
     /// Instruction decoding error.
     ///
     /// Occurs when a PowerPC instruction cannot be decoded (invalid opcode, malformed format).
     #[error("Instruction decode error: {0}")]
     InstructionDecodeError(String),
-    
+
     /// Code generation error.
     ///
     /// Occurs when Rust code generation fails (invalid IR, unsupported instruction, etc.).
     #[error("Code generation error: {0}")]
     CodeGenError(String),
-    
+
     /// Ghidra analysis error.
     ///
     /// Occurs when Ghidra analysis fails (Ghidra not found, analysis script error, etc.).
     #[error("Ghidra analysis error: {0}")]
     GhidraError(String),
-    
+
     /// Memory access error.
     ///
     /// Occurs when accessing invalid memory addresses (out of bounds, unmapped region).
     #[error("Memory access error: address 0x{0:08X}")]
     MemoryError(u32),
-    
+
     /// Invalid register error.
     ///
     /// Occurs when using an invalid register number (PowerPC has 32 GPRs, r0-r31).
     #[error("Invalid register: {0} (must be 0-31)")]
     InvalidRegister(u8),
-    
+
     /// Optimization error.
     ///
     /// Occurs when an optimization pass fails (invalid CFG, data flow analysis error, etc.).
     #[error("Optimization error: {0}")]
     OptimizationError(String),
-    
+
     /// Validation error.
     ///
     /// Occurs when generated Rust code validation fails (syntax error, type error, etc.).
@@ -74,4 +74,3 @@ impl From<std::io::Error> for RecompilerError {
         RecompilerError::DolParseError(format!("IO error: {}", err))
     }
 }
-

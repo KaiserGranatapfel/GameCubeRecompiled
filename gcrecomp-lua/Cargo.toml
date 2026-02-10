@@ -10,8 +10,6 @@ description = "Lua scripting integration for GameCube static recompiler"
 
 [dependencies]
 gcrecomp-core = { path = "../gcrecomp-core" }
-gcrecomp-runtime = { path = "../gcrecomp-runtime" }
-gcrecomp-ui = { path = "../gcrecomp-ui" }
 mlua = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -20,3 +18,4 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 crc32fast = { workspace = true }
 sha2 = { workspace = true }
+dirs = "5.0"

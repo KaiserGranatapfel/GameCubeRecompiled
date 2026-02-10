@@ -33,6 +33,8 @@ use anyhow::{Context, Result};
 pub struct MemoryManager {
     /// Main RAM (24MB)
     ram: Vec<u8>,
+    /// I/O registers (hardware register space: 0xCC000000-0xCC00FFFF)
+    io_regs: Vec<u8>,
 }
 
 impl MemoryManager {
@@ -49,8 +51,10 @@ impl MemoryManager {
     pub fn new() -> Self {
         // 24MB RAM model
         const RAM_SIZE: usize = 24usize * 1024usize * 1024usize; // 24MB
+        const IO_SIZE: usize = 0x10000usize; // 64KB I/O register space
         Self {
             ram: vec![0u8; RAM_SIZE],
+            io_regs: vec![0u8; IO_SIZE],
         }
     }
 
@@ -74,13 +78,71 @@ impl MemoryManager {
     /// ```
     #[inline(always)] // Hot path - always inline for performance
     fn translate_address(&self, address: u32) -> Option<usize> {
-        // GameCube uses a flat memory model with physical addresses
-        // Main RAM is at 0x80000000 - 0x817FFFFF
-        if address >= 0x80000000u32 && address < 0x81800000u32 {
-            Some((address.wrapping_sub(0x80000000u32)) as usize)
-        } else {
-            None
+        match address {
+            // Main RAM: 0x80000000 - 0x817FFFFF (cached)
+            0x80000000..=0x817FFFFF => Some((address.wrapping_sub(0x80000000u32)) as usize),
+            // Uncached RAM mirror: 0xC0000000 - 0xC17FFFFF → same physical RAM
+            0xC0000000..=0xC17FFFFF => Some((address.wrapping_sub(0xC0000000u32)) as usize),
+            _ => None,
         }
+    }
+
+    /// Read a byte from I/O register space (0xCC000000-0xCC00FFFF).
+    #[inline]
+    pub fn read_io_u8(&self, address: u32) -> Result<u8> {
+        let offset = (address.wrapping_sub(0xCC000000u32)) as usize;
+        if offset < self.io_regs.len() {
+            Ok(self.io_regs[offset])
+        } else {
+            anyhow::bail!("I/O register read out of bounds: 0x{:08X}", address);
+        }
+    }
+
+    /// Write a byte to I/O register space.
+    #[inline]
+    pub fn write_io_u8(&mut self, address: u32, value: u8) -> Result<()> {
+        let offset = (address.wrapping_sub(0xCC000000u32)) as usize;
+        if offset < self.io_regs.len() {
+            self.io_regs[offset] = value;
+            Ok(())
+        } else {
+            anyhow::bail!("I/O register write out of bounds: 0x{:08X}", address);
+        }
+    }
+
+    /// Read a 32-bit value from I/O register space.
+    #[inline]
+    pub fn read_io_u32(&self, address: u32) -> Result<u32> {
+        let offset = (address.wrapping_sub(0xCC000000u32)) as usize;
+        if offset + 3 < self.io_regs.len() {
+            let bytes: [u8; 4] = [
+                self.io_regs[offset],
+                self.io_regs[offset + 1],
+                self.io_regs[offset + 2],
+                self.io_regs[offset + 3],
+            ];
+            Ok(u32::from_be_bytes(bytes))
+        } else {
+            anyhow::bail!("I/O register read out of bounds: 0x{:08X}", address);
+        }
+    }
+
+    /// Write a 32-bit value to I/O register space.
+    #[inline]
+    pub fn write_io_u32(&mut self, address: u32, value: u32) -> Result<()> {
+        let offset = (address.wrapping_sub(0xCC000000u32)) as usize;
+        if offset + 3 < self.io_regs.len() {
+            let bytes = value.to_be_bytes();
+            self.io_regs[offset..offset + 4].copy_from_slice(&bytes);
+            Ok(())
+        } else {
+            anyhow::bail!("I/O register write out of bounds: 0x{:08X}", address);
+        }
+    }
+
+    /// Get raw RAM reference for direct access (e.g. texture decoding).
+    pub fn ram_slice(&self) -> &[u8] {
+        &self.ram
     }
 
     /// Read a single byte from memory.
@@ -416,19 +478,23 @@ impl MemoryManager {
     /// ```
     #[inline] // May be inlined for small lengths
     pub fn bulk_copy(&mut self, dest: u32, src: u32, len: usize) -> Result<()> {
-        let dest_offset: usize = self.translate_address(dest)
+        let dest_offset: usize = self
+            .translate_address(dest)
             .context("Invalid destination address")?;
-        let src_offset: usize = self.translate_address(src)
+        let src_offset: usize = self
+            .translate_address(src)
             .context("Invalid source address")?;
-        
-        if dest_offset.wrapping_add(len) > self.ram.len() || src_offset.wrapping_add(len) > self.ram.len() {
+
+        if dest_offset.wrapping_add(len) > self.ram.len()
+            || src_offset.wrapping_add(len) > self.ram.len()
+        {
             anyhow::bail!("Bulk copy out of bounds");
         }
-        
+
         // Always use temporary buffer to avoid borrow checker issues with overlapping slices
         let temp: Vec<u8> = self.ram[src_offset..src_offset.wrapping_add(len)].to_vec();
         self.ram[dest_offset..dest_offset.wrapping_add(len)].copy_from_slice(&temp);
-        
+
         Ok(())
     }
 
@@ -454,7 +520,8 @@ impl MemoryManager {
     /// ```
     #[inline] // May be inlined for small lengths
     pub fn get_slice(&self, address: u32, len: usize) -> Result<&[u8]> {
-        let offset: usize = self.translate_address(address)
+        let offset: usize = self
+            .translate_address(address)
             .context("Invalid memory address")?;
         if offset.wrapping_add(len) > self.ram.len() {
             anyhow::bail!("Memory slice out of bounds");

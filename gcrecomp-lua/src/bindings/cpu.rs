@@ -12,61 +12,94 @@ pub struct LuaCpuContext {
 impl UserData for LuaCpuContext {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("get_gpr", |_, this, reg: u8| {
-            let ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             Ok(ctx.get_register(reg))
         });
 
         methods.add_method("set_gpr", |_, this, (reg, val): (u8, u32)| {
-            let mut ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             ctx.set_register(reg, val);
             Ok(())
         });
 
         methods.add_method("get_fpr", |_, this, reg: u8| {
-            let ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             Ok(ctx.get_fpr(reg))
         });
 
         methods.add_method("set_fpr", |_, this, (reg, val): (u8, f64)| {
-            let mut ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             ctx.set_fpr(reg, val);
             Ok(())
         });
 
         methods.add_method("get_pc", |_, this, ()| {
-            let ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             Ok(ctx.pc)
         });
 
         methods.add_method("set_pc", |_, this, val: u32| {
-            let mut ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             ctx.pc = val;
             Ok(())
         });
 
         methods.add_method("get_lr", |_, this, ()| {
-            let ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             Ok(ctx.lr)
         });
 
         methods.add_method("set_lr", |_, this, val: u32| {
-            let mut ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             ctx.lr = val;
             Ok(())
         });
 
         methods.add_method("get_cr", |_, this, ()| {
-            let ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             Ok(ctx.cr)
         });
 
         methods.add_method("get_cr_field", |_, this, field: u8| {
-            let ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             Ok(ctx.get_cr_field(field))
         });
 
         methods.add_method("set_cr_field", |_, this, (field, val): (u8, u8)| {
-            let mut ctx = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut ctx = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             ctx.set_cr_field(field, val);
             Ok(())
         });
