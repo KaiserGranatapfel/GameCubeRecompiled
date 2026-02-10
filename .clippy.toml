@@ -1,8 +1,7 @@
 # Clippy configuration for GCRecomp
 avoid-breaking-exported-api = false
-msrv = "1.70.0"
+msrv = "1.80.0"
 too-many-arguments-threshold = 10
 type-complexity-threshold = 300
-single-char-lifetime-names = false
 verbose-bit-mask-threshold = 4
 

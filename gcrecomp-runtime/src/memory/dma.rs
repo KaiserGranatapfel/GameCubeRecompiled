@@ -15,6 +15,12 @@ pub struct DmaChannel {
     callback: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
+impl Default for DmaSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DmaSystem {
     pub fn new() -> Self {
         Self {
@@ -55,6 +61,93 @@ impl DmaSystem {
             self.channels[channel].active.load(Ordering::SeqCst)
         } else {
             false
+        }
+    }
+
+    /// Execute a pending DMA transfer, copying bytes between memory regions.
+    ///
+    /// `ram` is the main 24 MB RAM buffer (indexed by physical offset).
+    /// `aram` is the auxiliary 16 MB audio RAM buffer.
+    ///
+    /// Source/destination addresses are translated as follows:
+    ///   0x80000000-0x817FFFFF → RAM (cached mirror)
+    ///   0xC0000000-0xC17FFFFF → RAM (uncached mirror)
+    ///   0x00000000-0x00FFFFFF → ARAM
+    pub fn execute_transfer(&mut self, channel: usize, ram: &mut [u8], aram: &mut [u8]) {
+        if channel >= self.channels.len() {
+            return;
+        }
+        let ch = &self.channels[channel];
+        if !ch.active.load(Ordering::SeqCst) {
+            return;
+        }
+
+        let len = ch.length as usize;
+        let src_addr = ch.source;
+        let dst_addr = ch.destination;
+
+        // Read source bytes into temporary buffer
+        let mut buf = vec![0u8; len];
+        Self::read_region(src_addr, &mut buf, ram, aram);
+
+        // Write to destination
+        Self::write_region(dst_addr, &buf, ram, aram);
+
+        // Mark transfer complete and fire callback
+        self.complete_transfer(channel);
+    }
+
+    fn region_slice_read<'a>(
+        addr: u32,
+        len: usize,
+        ram: &'a [u8],
+        aram: &'a [u8],
+    ) -> Option<&'a [u8]> {
+        match addr {
+            0x80000000..=0x817FFFFF => {
+                let off = (addr & 0x01FFFFFF) as usize;
+                ram.get(off..off + len)
+            }
+            0xC0000000..=0xC17FFFFF => {
+                let off = (addr & 0x01FFFFFF) as usize;
+                ram.get(off..off + len)
+            }
+            _ if addr < 0x01000000 => {
+                let off = addr as usize;
+                aram.get(off..off + len)
+            }
+            _ => None,
+        }
+    }
+
+    fn read_region(addr: u32, buf: &mut [u8], ram: &[u8], aram: &[u8]) {
+        if let Some(src) = Self::region_slice_read(addr, buf.len(), ram, aram) {
+            buf.copy_from_slice(src);
+        }
+    }
+
+    fn write_region(addr: u32, buf: &[u8], ram: &mut [u8], aram: &mut [u8]) {
+        let len = buf.len();
+        match addr {
+            0x80000000..=0x817FFFFF => {
+                let off = (addr & 0x01FFFFFF) as usize;
+                if let Some(dst) = ram.get_mut(off..off + len) {
+                    dst.copy_from_slice(buf);
+                }
+            }
+            0xC0000000..=0xC17FFFFF => {
+                let off = (addr & 0x01FFFFFF) as usize;
+                if let Some(dst) = ram.get_mut(off..off + len) {
+                    dst.copy_from_slice(buf);
+                }
+            }
+            _ if addr < 0x01000000 => {
+                let off = addr as usize;
+                if let Some(dst) = aram.get_mut(off..off + len) {
+                    dst.copy_from_slice(buf);
+                }
+            }
+            _ => {}
         }
     }
 

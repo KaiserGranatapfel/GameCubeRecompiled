@@ -1,8 +1,8 @@
 pub mod control_flow;
 pub mod data_flow;
-pub mod type_inference;
 pub mod inter_procedural;
 pub mod loop_analysis;
+pub mod type_inference;
 
 /// Type information for decompiled/recompiled code
 #[derive(Debug, Clone, PartialEq)]
@@ -20,7 +20,10 @@ pub enum TypeInfo {
     /// Array type
     Array { element: Box<TypeInfo>, size: usize },
     /// Structure type
-    Struct { name: String, fields: Vec<(String, TypeInfo)> },
+    Struct {
+        name: String,
+        fields: Vec<(String, TypeInfo)>,
+    },
 }
 
 /// Function metadata extracted from analysis
@@ -71,4 +74,3 @@ pub struct VariableInfo {
     /// Scope end address
     pub scope_end: u32,
 }
-

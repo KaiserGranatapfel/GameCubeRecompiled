@@ -9,6 +9,8 @@ use std::sync::Arc;
 use crate::security;
 use crate::server::{AppState, RecompileStatus};
 
+type PipelineStageFn = fn(&mut PipelineContext) -> anyhow::Result<()>;
+
 pub fn api_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/upload", post(upload_dol))
@@ -23,59 +25,60 @@ async fn upload_dol(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    while let Some(field) = multipart
+    let field = multipart
         .next_field()
         .await
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?
-    {
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-
-        if data.len() > security::MAX_UPLOAD_SIZE {
-            return Err((
-                axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-                "File too large".to_string(),
-            ));
-        }
-
-        if !security::validate_dol_magic(&data) {
-            return Err((
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid DOL file".to_string(),
-            ));
-        }
-
-        // Save to temp location
-        let upload_dir = std::path::Path::new("uploads");
-        std::fs::create_dir_all(upload_dir)
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let path = upload_dir.join("uploaded.dol");
-        std::fs::write(&path, &data)
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        // Initialize pipeline context
-        let mut ctx = PipelineContext::new();
-        let dol = gcrecomp_core::recompiler::parser::DolFile::parse(
-            &data,
-            path.to_str().unwrap_or("uploaded.dol"),
-        )
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-        ctx.dol_file = Some(dol);
 
-        *state.pipeline_ctx.lock().await = Some(ctx);
+    let Some(field) = field else {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "No file provided".to_string(),
+        ));
+    };
 
-        return Ok(Json(serde_json::json!({
-            "status": "uploaded",
-            "size": data.len(),
-        })));
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    if data.len() > security::MAX_UPLOAD_SIZE {
+        return Err((
+            axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+            "File too large".to_string(),
+        ));
     }
 
-    Err((
-        axum::http::StatusCode::BAD_REQUEST,
-        "No file provided".to_string(),
-    ))
+    if !security::validate_dol_magic(&data) {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid DOL file".to_string(),
+        ));
+    }
+
+    // Save to temp location
+    let upload_dir = std::path::Path::new("uploads");
+    std::fs::create_dir_all(upload_dir)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let path = upload_dir.join("uploaded.dol");
+    std::fs::write(&path, &data)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Initialize pipeline context
+    let mut ctx = PipelineContext::new();
+    let dol = gcrecomp_core::recompiler::parser::DolFile::parse(
+        &data,
+        path.to_str().unwrap_or("uploaded.dol"),
+    )
+    .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    ctx.dol_file = Some(dol);
+
+    *state.pipeline_ctx.lock().await = Some(ctx);
+
+    Ok(Json(serde_json::json!({
+        "status": "uploaded",
+        "size": data.len(),
+    })))
 }
 
 async fn start_recompile(
@@ -106,7 +109,7 @@ async fn start_recompile(
     // Run pipeline stages in a background task
     let state_clone = Arc::clone(&state);
     tokio::spawn(async move {
-        let stages: &[(&str, fn(&mut PipelineContext) -> anyhow::Result<()>)] = &[
+        let stages: &[(&str, PipelineStageFn)] = &[
             ("analyze", RecompilationPipeline::stage_analyze),
             ("decode", RecompilationPipeline::stage_decode),
             ("build_cfg", RecompilationPipeline::stage_build_cfg),
@@ -144,7 +147,9 @@ async fn start_recompile(
             let mut ctx_guard = state_clone.pipeline_ctx.lock().await;
             if let Some(ref mut ctx) = *ctx_guard {
                 std::fs::create_dir_all("output").ok();
-                if let Err(e) = RecompilationPipeline::stage_write_output(ctx, "output/recompiled.rs") {
+                if let Err(e) =
+                    RecompilationPipeline::stage_write_output(ctx, "output/recompiled.rs")
+                {
                     let mut status = state_clone.current_status.lock().await;
                     status.state = "error".to_string();
                     status.error = Some(e.to_string());
@@ -164,9 +169,7 @@ async fn start_recompile(
     })))
 }
 
-async fn get_status(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+async fn get_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let status = state.current_status.lock().await;
     Json(serde_json::json!({
         "state": status.state,

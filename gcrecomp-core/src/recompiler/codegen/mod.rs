@@ -1,27 +1,27 @@
 // Rust code generator with optimizations
-pub mod register;
 pub mod memory;
+pub mod register;
 
-use anyhow::{Result, Context};
-use crate::recompiler::decoder::{DecodedInstruction, InstructionType, Operand};
 use crate::recompiler::analysis::FunctionMetadata;
+use crate::recompiler::decoder::{DecodedInstruction, InstructionType, Operand};
+use anyhow::Result;
 use std::collections::HashMap;
 
 pub struct CodeGenerator {
     indent_level: usize,
-    register_map: HashMap<u8, String>,
-    next_temp: usize,
+    _register_map: HashMap<u8, String>,
+    _next_temp: usize,
     register_values: HashMap<u8, RegisterValue>,
     label_counter: usize,
     optimize: bool,
-    function_calls: Vec<u32>, // Track function call targets
-    basic_block_map: HashMap<u32, usize>, // Map addresses to basic block indices
+    function_calls: Vec<u32>,              // Track function call targets
+    _basic_block_map: HashMap<u32, usize>, // Map addresses to basic block indices
 }
 
 #[derive(Debug, Clone)]
 enum RegisterValue {
     Constant(u32),
-    Variable(String),
+    _Variable(String),
     Unknown,
 }
 
@@ -29,13 +29,13 @@ impl CodeGenerator {
     pub fn new() -> Self {
         Self {
             indent_level: 0,
-            register_map: HashMap::new(),
-            next_temp: 0,
+            _register_map: HashMap::new(),
+            _next_temp: 0,
             register_values: HashMap::new(),
             label_counter: 0,
             optimize: true,
             function_calls: Vec::new(),
-            basic_block_map: HashMap::new(),
+            _basic_block_map: HashMap::new(),
         }
     }
 
@@ -73,12 +73,16 @@ impl CodeGenerator {
         let func_name = if metadata.name.is_empty() || metadata.name.starts_with("sub_") {
             format!("func_0x{:08X}", metadata.address)
         } else {
-            format!("{}_{:08X}", self.sanitize_identifier(&metadata.name), metadata.address)
+            format!(
+                "{}_{:08X}",
+                self.sanitize_identifier(&metadata.name),
+                metadata.address
+            )
         };
 
         sig.push_str("pub fn ");
         sig.push_str(&func_name);
-        sig.push_str("(");
+        sig.push('(');
 
         // Standard function signature: ctx and memory (PowerPC calling convention)
         sig.push_str("ctx: &mut CpuContext, memory: &mut MemoryManager");
@@ -93,27 +97,40 @@ impl CodeGenerator {
 
     fn generate_function_body(&mut self, instructions: &[DecodedInstruction]) -> Result<String> {
         // Use control flow analysis to generate better code
-        let cfg = crate::recompiler::analysis::control_flow::ControlFlowAnalyzer::build_cfg(instructions, 0)
-            .unwrap_or_else(|_| {
-                // Fallback to basic block construction
-                crate::recompiler::analysis::control_flow::ControlFlowGraph {
-                    nodes: vec![],
-                    edges: vec![],
-                    entry_block: 0,
-                }
-            });
+        let cfg = crate::recompiler::analysis::control_flow::ControlFlowAnalyzer::build_cfg(
+            instructions,
+            0,
+        )
+        .unwrap_or_else(|_| {
+            // Fallback to basic block construction
+            crate::recompiler::analysis::control_flow::ControlFlowGraph {
+                nodes: vec![],
+                edges: vec![],
+                entry_block: 0,
+            }
+        });
 
         // Use data flow analysis for optimizations
-        let def_use_chains = crate::recompiler::analysis::data_flow::DataFlowAnalyzer::build_def_use_chains(instructions);
+        let _def_use_chains =
+            crate::recompiler::analysis::data_flow::DataFlowAnalyzer::build_def_use_chains(
+                instructions,
+            );
         let live_analysis = if !cfg.nodes.is_empty() {
-            Some(crate::recompiler::analysis::data_flow::DataFlowAnalyzer::live_variable_analysis(&cfg))
+            Some(
+                crate::recompiler::analysis::data_flow::DataFlowAnalyzer::live_variable_analysis(
+                    &cfg,
+                ),
+            )
         } else {
             None
         };
 
         // Optimize instructions using data flow analysis
         let optimized_instructions = if let Some(ref live) = live_analysis {
-            crate::recompiler::analysis::data_flow::DataFlowAnalyzer::eliminate_dead_code(instructions, live)
+            crate::recompiler::analysis::data_flow::DataFlowAnalyzer::eliminate_dead_code(
+                instructions,
+                live,
+            )
         } else {
             instructions.to_vec()
         };
@@ -121,7 +138,10 @@ impl CodeGenerator {
         self.generate_function_body_impl(&optimized_instructions)
     }
 
-    fn generate_function_body_impl(&mut self, instructions: &[DecodedInstruction]) -> Result<String> {
+    fn generate_function_body_impl(
+        &mut self,
+        instructions: &[DecodedInstruction],
+    ) -> Result<String> {
         let mut code = String::new();
 
         // Note: ctx and memory are passed as parameters, no need to initialize
@@ -181,7 +201,10 @@ impl CodeGenerator {
                         code.push_str(&self.indent());
                         code.push_str(&format!("// Raw instruction: 0x{:08X}\n", instruction.raw));
                         code.push_str(&self.indent());
-                        code.push_str(&format!("// Instruction type: {:?}\n", instruction.instruction.instruction_type));
+                        code.push_str(&format!(
+                            "// Instruction type: {:?}\n",
+                            instruction.instruction.instruction_type
+                        ));
                         code.push_str(&self.indent());
                         code.push_str("// Fallback: generating generic instruction handler\n");
                         code.push_str(&self.indent());
@@ -219,7 +242,10 @@ impl CodeGenerator {
         Ok(code)
     }
 
-    fn build_basic_blocks<'a>(&self, instructions: &'a [DecodedInstruction]) -> Result<Vec<Vec<&'a DecodedInstruction>>> {
+    fn _build_basic_blocks<'a>(
+        &self,
+        instructions: &'a [DecodedInstruction],
+    ) -> Result<Vec<Vec<&'a DecodedInstruction>>> {
         // Simple basic block construction: split at branches
         let mut blocks = Vec::new();
         let mut current_block = Vec::new();
@@ -313,12 +339,12 @@ impl CodeGenerator {
 
         // Determine operation based on opcode and extended opcode
         let (op, update_cr) = match inst.instruction.opcode {
-            14 => ("+", false),  // addi
-            15 => ("-", false),   // subi
-            12 => ("&", false),   // andi
-            13 => ("|", false),   // ori
-            10 => ("^", false),   // xori
-            11 => ("&", false),   // andis
+            14 => ("+", false), // addi
+            15 => ("-", false), // subi
+            12 => ("&", false), // andi
+            13 => ("|", false), // ori
+            10 => ("^", false), // xori
+            11 => ("&", false), // andis
             31 => {
                 // Extended opcode - decode from instruction
                 let ext_opcode = (inst.raw >> 1) & 0x3FF;
@@ -374,7 +400,9 @@ impl CodeGenerator {
 
         // Optimize: if both operands are constants, compute at compile time
         let ra_value = self.get_register_value(ra_reg);
-        if let (Some(RegisterValue::Constant(a)), Some(RegisterValue::Constant(b))) = (ra_value, rb_value) {
+        if let (Some(RegisterValue::Constant(a)), Some(RegisterValue::Constant(b))) =
+            (ra_value, rb_value)
+        {
             let result = match op {
                 "+" => a.wrapping_add(b),
                 "-" => a.wrapping_sub(b),
@@ -404,10 +432,7 @@ impl CodeGenerator {
         // Update condition register if needed
         if update_cr {
             code.push_str(&self.indent());
-            code.push_str(&format!(
-                "let result = ctx.get_register({});\n",
-                rt_reg
-            ));
+            code.push_str(&format!("let result = ctx.get_register({});\n", rt_reg));
             code.push_str(&self.indent());
             code.push_str("let cr_field = if result == 0 { 0x2u8 } else if (result as i32) < 0 { 0x8u8 } else { 0x4u8 };\n");
             code.push_str(&self.indent());
@@ -497,7 +522,8 @@ impl CodeGenerator {
 
         // Optimize: if base address is constant, compute address at compile time
         let base_value = self.get_register_value(ra_reg);
-        let value_expr = if let Some(RegisterValue::Constant(val)) = self.get_register_value(rs_reg) {
+        let value_expr = if let Some(RegisterValue::Constant(val)) = self.get_register_value(rs_reg)
+        {
             format!("{}u32", val)
         } else {
             format!("ctx.get_register({})", rs_reg)
@@ -517,7 +543,10 @@ impl CodeGenerator {
                 ra_reg, offset
             ));
             code.push_str(&self.indent());
-            code.push_str(&format!("memory.write_u32(addr, {}).unwrap_or(());\n", value_expr));
+            code.push_str(&format!(
+                "memory.write_u32(addr, {}).unwrap_or(());\n",
+                value_expr
+            ));
         }
 
         Ok(code)
@@ -546,10 +575,7 @@ impl CodeGenerator {
                 if is_call {
                     self.function_calls.push(target as u32);
                     code.push_str(&self.indent());
-                    code.push_str(&format!(
-                        "// Function call to 0x{:08X}\n",
-                        target
-                    ));
+                    code.push_str(&format!("// Function call to 0x{:08X}\n", target));
                     code.push_str(&self.indent());
                     code.push_str("// Save return address in link register\n");
                     code.push_str(&self.indent());
@@ -568,7 +594,9 @@ impl CodeGenerator {
                     code.push_str("Ok(result) => {\n");
                     self.indent_level += 1;
                     code.push_str(&self.indent());
-                    code.push_str("// Function call succeeded, result in r3 (PowerPC calling convention)\n");
+                    code.push_str(
+                        "// Function call succeeded, result in r3 (PowerPC calling convention)\n",
+                    );
                     code.push_str(&self.indent());
                     code.push_str("if let Some(ret_val) = result {\n");
                     self.indent_level += 1;
@@ -610,7 +638,7 @@ impl CodeGenerator {
             }
             3..=5 => {
                 // Conditional branch (bc, bca, bcl, bcla)
-                let bo = match &inst.instruction.operands[0] {
+                let _bo = match &inst.instruction.operands[0] {
                     Operand::Condition(c) => *c,
                     _ => anyhow::bail!("First operand must be condition"),
                 };
@@ -638,7 +666,8 @@ impl CodeGenerator {
                 code.push_str(&self.indent());
                 code.push_str(&format!(
                     "let cr_bit = (ctx.get_cr_field({}) >> {}) & 1;\n",
-                    bi / 4, bi % 4
+                    bi / 4,
+                    bi % 4
                 ));
                 code.push_str(&self.indent());
                 code.push_str("if cr_bit != 0 {\n");
@@ -798,15 +827,15 @@ impl CodeGenerator {
                 // Determine operation based on extended opcode
                 let ext_opcode = (inst.raw >> 1) & 0x3FF;
                 let op = match ext_opcode {
-                    21 => "+",  // fadd
-                    20 => "-",  // fsub
-                    25 => "*",  // fmul
-                    18 => "/",  // fdiv
-                    14 => "+",  // fmadd (FRA * FRC + FRB)
-                    15 => "-",  // fmsub (FRA * FRC - FRB)
-                    28 => "-",  // fnmadd (-(FRA * FRC + FRB))
-                    29 => "-",  // fnmsub (-(FRA * FRC - FRB))
-                    _ => "+",   // Default to add
+                    21 => "+", // fadd
+                    20 => "-", // fsub
+                    25 => "*", // fmul
+                    18 => "/", // fdiv
+                    14 => "+", // fmadd (FRA * FRC + FRB)
+                    15 => "-", // fmsub (FRA * FRC - FRB)
+                    28 => "-", // fnmadd (-(FRA * FRC + FRB))
+                    29 => "-", // fnmsub (-(FRA * FRC - FRB))
+                    _ => "+",  // Default to add
                 };
 
                 // Handle multiply-add/subtract operations
@@ -815,7 +844,9 @@ impl CodeGenerator {
                     if inst.instruction.operands.len() >= 4 {
                         let frc = match &inst.instruction.operands[2] {
                             Operand::FpRegister(r) => *r,
-                            _ => anyhow::bail!("Third operand must be FP register for multiply-add"),
+                            _ => {
+                                anyhow::bail!("Third operand must be FP register for multiply-add")
+                            }
                         };
                         code.push_str(&self.indent());
                         code.push_str(&format!(
@@ -829,7 +860,11 @@ impl CodeGenerator {
                         code.push_str(&self.indent());
                         code.push_str(&format!(
                             "let result = mul_result {} ctx.get_fpr({});\n",
-                            if ext_opcode == 15 || ext_opcode == 29 { "-" } else { "+" },
+                            if ext_opcode == 15 || ext_opcode == 29 {
+                                "-"
+                            } else {
+                                "+"
+                            },
                             frb
                         ));
                         if ext_opcode == 29 {
@@ -861,10 +896,7 @@ impl CodeGenerator {
                 };
 
                 code.push_str(&self.indent());
-                code.push_str(&format!(
-                    "let addr = ctx.get_register({}) as u32;\n",
-                    ra
-                ));
+                code.push_str(&format!("let addr = ctx.get_register({}) as u32;\n", ra));
                 code.push_str(&self.indent());
                 code.push_str("let value = f64::from_bits(memory.read_u64(addr).unwrap_or(0));\n");
                 code.push_str(&self.indent());
@@ -909,27 +941,21 @@ impl CodeGenerator {
             };
 
             code.push_str(&self.indent());
-            code.push_str(&format!(
-                "let cr_a = ctx.get_cr_field({});\n",
-                ba / 4
-            ));
+            code.push_str(&format!("let cr_a = ctx.get_cr_field({});\n", ba / 4));
             code.push_str(&self.indent());
-            code.push_str(&format!(
-                "let cr_b = ctx.get_cr_field({});\n",
-                bb / 4
-            ));
+            code.push_str(&format!("let cr_b = ctx.get_cr_field({});\n", bb / 4));
             // Determine operation based on extended opcode
             let ext_opcode = (inst.raw >> 1) & 0x3FF;
             let cr_op = match ext_opcode {
-                257 => "&",   // crand
-                449 => "|",   // cror
-                193 => "^",   // crxor
-                225 => "&",   // crnand (result = !(cr_a & cr_b))
-                33 => "|",    // crnor (result = !(cr_a | cr_b))
-                289 => "^",   // creqv (result = !(cr_a ^ cr_b))
-                129 => "&",   // crandc (result = cr_a & !cr_b)
-                417 => "|",   // crorc (result = cr_a | !cr_b)
-                _ => "&",     // Default to AND
+                257 => "&", // crand
+                449 => "|", // cror
+                193 => "^", // crxor
+                225 => "&", // crnand (result = !(cr_a & cr_b))
+                33 => "|",  // crnor (result = !(cr_a | cr_b))
+                289 => "^", // creqv (result = !(cr_a ^ cr_b))
+                129 => "&", // crandc (result = cr_a & !cr_b)
+                417 => "|", // crorc (result = cr_a | !cr_b)
+                _ => "&",   // Default to AND
             };
 
             code.push_str(&self.indent());
@@ -937,31 +963,34 @@ impl CodeGenerator {
                 // NAND, NOR, or EQV - need to negate result
                 code.push_str(&format!(
                     "let cr_result = !(ctx.get_cr_field({}) {} ctx.get_cr_field({}));\n",
-                    ba / 4, cr_op, bb / 4
+                    ba / 4,
+                    cr_op,
+                    bb / 4
                 ));
             } else if ext_opcode == 129 {
                 // AND with complement
                 code.push_str(&format!(
                     "let cr_result = ctx.get_cr_field({}) & !ctx.get_cr_field({});\n",
-                    ba / 4, bb / 4
+                    ba / 4,
+                    bb / 4
                 ));
             } else if ext_opcode == 417 {
                 // OR with complement
                 code.push_str(&format!(
                     "let cr_result = ctx.get_cr_field({}) | !ctx.get_cr_field({});\n",
-                    ba / 4, bb / 4
+                    ba / 4,
+                    bb / 4
                 ));
             } else {
                 code.push_str(&format!(
                     "let cr_result = ctx.get_cr_field({}) {} ctx.get_cr_field({});\n",
-                    ba / 4, cr_op, bb / 4
+                    ba / 4,
+                    cr_op,
+                    bb / 4
                 ));
             }
             code.push_str(&self.indent());
-            code.push_str(&format!(
-                "ctx.set_cr_field({}, cr_result);\n",
-                bt / 4
-            ));
+            code.push_str(&format!("ctx.set_cr_field({}, cr_result);\n", bt / 4));
         }
 
         Ok(code)
@@ -1043,15 +1072,9 @@ impl CodeGenerator {
             rs, sh
         ));
         code.push_str(&self.indent());
-        code.push_str(&format!(
-            "let masked = rotated & 0x{:08X}u32;\n",
-            mask
-        ));
+        code.push_str(&format!("let masked = rotated & 0x{:08X}u32;\n", mask));
         code.push_str(&self.indent());
-        code.push_str(&format!(
-            "ctx.set_register({}, masked);\n",
-            ra
-        ));
+        code.push_str(&format!("ctx.set_register({}, masked);\n", ra));
 
         Ok(code)
     }
@@ -1063,17 +1086,11 @@ impl CodeGenerator {
         if !inst.instruction.operands.is_empty() {
             if let Operand::SpecialRegister(spr) = &inst.instruction.operands[0] {
                 code.push_str(&self.indent());
-                code.push_str(&format!(
-                    "// System register operation: SPR {}\n",
-                    spr
-                ));
+                code.push_str(&format!("// System register operation: SPR {}\n", spr));
                 if inst.instruction.operands.len() > 1 {
                     if let Operand::Register(rt) = &inst.instruction.operands[1] {
                         code.push_str(&self.indent());
-                        code.push_str(&format!(
-                            "// Move from/to SPR {} to/from r{}\n",
-                            spr, rt
-                        ));
+                        code.push_str(&format!("// Move from/to SPR {} to/from r{}\n", spr, rt));
                     }
                 }
             } else {
@@ -1082,7 +1099,10 @@ impl CodeGenerator {
             }
         } else {
             code.push_str(&self.indent());
-            code.push_str(&format!("// System instruction: opcode 0x{:02X}\n", inst.instruction.opcode));
+            code.push_str(&format!(
+                "// System instruction: opcode 0x{:02X}\n",
+                inst.instruction.opcode
+            ));
             code.push_str(&self.indent());
             code.push_str("// System instructions typically require special handling\n");
         }
@@ -1093,8 +1113,10 @@ impl CodeGenerator {
     fn generate_generic(&mut self, inst: &DecodedInstruction) -> Result<String> {
         let mut code = String::new();
         code.push_str(&self.indent());
-        code.push_str(&format!("// Instruction type: {:?}, opcode: 0x{:02X}\n",
-            inst.instruction.instruction_type, inst.instruction.opcode));
+        code.push_str(&format!(
+            "// Instruction type: {:?}, opcode: 0x{:02X}\n",
+            inst.instruction.instruction_type, inst.instruction.opcode
+        ));
         code.push_str(&self.indent());
         code.push_str(&format!("// Raw: 0x{:08X}\n", inst.raw));
         code.push_str(&self.indent());
@@ -1104,17 +1126,14 @@ impl CodeGenerator {
         if !inst.instruction.operands.is_empty() {
             if let Operand::Register(rt) = &inst.instruction.operands[0] {
                 code.push_str(&self.indent());
-                code.push_str(&format!(
-                    "// First operand is register r{}\n",
-                    rt
-                ));
+                code.push_str(&format!("// First operand is register r{}\n", rt));
             }
         }
 
         Ok(code)
     }
 
-    fn type_to_rust(&self, ty: &crate::recompiler::analysis::TypeInfo) -> String {
+    fn _type_to_rust(&self, ty: &crate::recompiler::analysis::TypeInfo) -> String {
         match ty {
             crate::recompiler::analysis::TypeInfo::Void => "()".to_string(),
             crate::recompiler::analysis::TypeInfo::Integer { signed, size } => {
@@ -1131,16 +1150,14 @@ impl CodeGenerator {
                 }
             }
             crate::recompiler::analysis::TypeInfo::Pointer { pointee } => {
-                format!("*mut {}", self.type_to_rust(pointee))
+                format!("*mut {}", self._type_to_rust(pointee))
             }
             _ => "u32".to_string(),
         }
     }
 
     pub fn sanitize_identifier(&self, name: &str) -> String {
-        name.replace(' ', "_")
-            .replace('-', "_")
-            .replace('.', "_")
+        name.replace([' ', '-', '.'], "_")
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '_')
             .collect()

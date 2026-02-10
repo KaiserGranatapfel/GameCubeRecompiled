@@ -174,7 +174,7 @@ impl ControlFlowAnalyzer {
         let mut edges: Vec<Edge> = Vec::new();
         let mut address_to_block: HashMap<u32, u32> = HashMap::new();
         let mut block_id: u32 = 0u32;
-        
+
         // First pass: identify basic block boundaries
         // Block boundaries occur at:
         // 1. Function entry point
@@ -182,7 +182,7 @@ impl ControlFlowAnalyzer {
         // 3. Instructions immediately after branches (fall-through)
         let mut block_starts: std::collections::HashSet<u32> = std::collections::HashSet::new();
         block_starts.insert(entry_address);
-        
+
         let mut current_address: u32 = entry_address;
         for inst in instructions.iter() {
             // Branch targets start new blocks
@@ -195,11 +195,11 @@ impl ControlFlowAnalyzer {
             }
             current_address = current_address.wrapping_add(4); // PowerPC instructions are 4 bytes
         }
-        
+
         // Second pass: build basic blocks
         let mut current_block: Option<BasicBlock> = None;
         let mut current_address: u32 = entry_address;
-        
+
         for inst in instructions.iter() {
             if block_starts.contains(&current_address) {
                 // Start new block
@@ -221,17 +221,17 @@ impl ControlFlowAnalyzer {
                 block.instructions.push(inst.clone());
                 block.end_address = current_address;
             }
-            
+
             current_address = current_address.wrapping_add(4); // PowerPC instructions are 4 bytes
         }
-        
+
         // Add final block if exists
         if let Some(block) = current_block {
             let block_idx: u32 = nodes.len() as u32;
             address_to_block.insert(block.start_address, block_idx);
             nodes.push(block);
         }
-        
+
         // Third pass: identify edges
         // Collect updates to apply after iteration (avoids borrow checker issues)
         let mut successor_updates: Vec<(usize, u32)> = Vec::new();
@@ -282,14 +282,14 @@ impl ControlFlowAnalyzer {
                 }
             }
         }
-        
+
         Ok(ControlFlowGraph {
             nodes,
             edges,
             entry_block: 0u32,
         })
     }
-    
+
     /// Extract branch target address from a branch instruction.
     ///
     /// # Arguments
@@ -306,11 +306,14 @@ impl ControlFlowAnalyzer {
     #[inline] // Hot path - called for every branch instruction
     fn get_branch_target(inst: &DecodedInstruction) -> Option<u32> {
         // Extract branch target from instruction
-        if matches!(inst.instruction.instruction_type, crate::recompiler::decoder::InstructionType::Branch) {
+        if matches!(
+            inst.instruction.instruction_type,
+            crate::recompiler::decoder::InstructionType::Branch
+        ) {
             if let Some(Operand::Address(addr)) = inst.instruction.operands.first() {
                 return Some(*addr);
             }
-            if let Some(Operand::Immediate32(imm)) = inst.instruction.operands.first() {
+            if let Some(Operand::Immediate32(_imm)) = inst.instruction.operands.first() {
                 // Relative branch - would need current PC to compute absolute address
                 // For now, return None (caller should track PC)
                 return None;
@@ -322,7 +325,7 @@ impl ControlFlowAnalyzer {
         }
         None
     }
-    
+
     /// Detect loops in the control flow graph using depth-first search.
     ///
     /// # Algorithm
@@ -347,13 +350,13 @@ impl ControlFlowAnalyzer {
         let mut loops: Vec<Loop> = Vec::new();
         let mut visited: BitVec<u32> = bitvec![u32, Lsb0; 0; cfg.nodes.len()];
         let mut in_stack: BitVec<u32> = bitvec![u32, Lsb0; 0; cfg.nodes.len()];
-        
+
         // Use DFS to find back edges (indicates loops)
         Self::dfs_loops(cfg, 0u32, &mut visited, &mut in_stack, &mut loops);
-        
+
         loops
     }
-    
+
     /// Depth-first search helper for loop detection.
     ///
     /// # Algorithm
@@ -378,17 +381,17 @@ impl ControlFlowAnalyzer {
         if node_idx >= visited.len() {
             return;
         }
-        
+
         visited.set(node_idx, true);
         in_stack.set(node_idx, true);
-        
+
         if let Some(block) = cfg.nodes.get(node_idx) {
             for &succ in block.successors.iter() {
                 let succ_idx: usize = succ as usize;
                 if succ_idx >= visited.len() {
                     continue;
                 }
-                
+
                 if !visited[succ_idx] {
                     Self::dfs_loops(cfg, succ, visited, in_stack, loops);
                 } else if in_stack[succ_idx] {
@@ -397,7 +400,7 @@ impl ControlFlowAnalyzer {
                     let mut loop_body: BitVec<u32> = bitvec![u32, Lsb0; 0; cfg.nodes.len()];
                     loop_body.set(loop_header as usize, true);
                     loop_body.set(node_idx, true);
-                    
+
                     loops.push(Loop {
                         header: loop_header,
                         back_edges: SmallVec::from_slice(&[(node, loop_header)]),
@@ -407,10 +410,10 @@ impl ControlFlowAnalyzer {
                 }
             }
         }
-        
+
         in_stack.set(node_idx, false);
     }
-    
+
     /// Analyze function calls in the control flow graph.
     ///
     /// # Algorithm
@@ -433,7 +436,7 @@ impl ControlFlowAnalyzer {
     #[inline] // May be called frequently
     pub fn analyze_function_calls(cfg: &ControlFlowGraph) -> Vec<FunctionCall> {
         let mut calls: Vec<FunctionCall> = Vec::new();
-        
+
         for block in cfg.nodes.iter() {
             let mut instruction_address: u32 = block.start_address;
             for inst in block.instructions.iter() {
@@ -449,10 +452,10 @@ impl ControlFlowAnalyzer {
                 instruction_address = instruction_address.wrapping_add(4); // PowerPC instructions are 4 bytes
             }
         }
-        
+
         calls
     }
-    
+
     /// Check if an instruction is a function call.
     ///
     /// # Algorithm
@@ -467,8 +470,10 @@ impl ControlFlowAnalyzer {
     #[inline] // Hot path - called for every instruction
     fn is_function_call(inst: &DecodedInstruction) -> bool {
         // Check if instruction is a branch with link (bl, bla)
-        matches!(inst.instruction.instruction_type, crate::recompiler::decoder::InstructionType::Branch)
-            && (inst.raw & 1u32) != 0u32 // Link bit set
+        matches!(
+            inst.instruction.instruction_type,
+            crate::recompiler::decoder::InstructionType::Branch
+        ) && (inst.raw & 1u32) != 0u32 // Link bit set
     }
 }
 

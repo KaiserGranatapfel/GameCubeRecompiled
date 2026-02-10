@@ -2,12 +2,10 @@
 
 use gcrecomp_core::recompiler::analysis::FunctionMetadata;
 use gcrecomp_core::recompiler::codegen::CodeGenerator;
-use gcrecomp_core::recompiler::decoder::{
-    DecodedInstruction, Instruction, InstructionType, Operand,
-};
+use gcrecomp_core::recompiler::decoder::{DecodedInstruction, Instruction, InstructionType};
 use smallvec::SmallVec;
 
-fn create_test_instruction(opcode: u32, inst_type: InstructionType) -> DecodedInstruction {
+fn _create_test_instruction(opcode: u32, inst_type: InstructionType) -> DecodedInstruction {
     DecodedInstruction {
         instruction: Instruction {
             opcode,

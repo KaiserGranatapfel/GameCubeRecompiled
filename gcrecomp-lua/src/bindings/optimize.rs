@@ -27,7 +27,7 @@ pub fn register(lua: &Lua, gcrecomp: &Table) -> anyhow::Result<()> {
                 {
                     removed += 1;
                     i += 3; // Skip the stub function
-                    // Also skip trailing newline
+                            // Also skip trailing newline
                     if i < lines.len() && lines[i].is_empty() {
                         i += 1;
                     }
@@ -68,8 +68,7 @@ pub fn register(lua: &Lua, gcrecomp: &Table) -> anyhow::Result<()> {
             let table = lua.create_table()?;
 
             if Path::new(&path).exists() {
-                let metadata =
-                    std::fs::metadata(&path).map_err(mlua::Error::external)?;
+                let metadata = std::fs::metadata(&path).map_err(mlua::Error::external)?;
                 let size = metadata.len();
                 table.set("size_bytes", size)?;
                 table.set("size_kb", size as f64 / 1024.0)?;

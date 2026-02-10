@@ -10,10 +10,10 @@
 //! ensuring seamless integration without manual setup.
 
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub struct GhidraAnalysis {
     pub functions: Vec<FunctionInfo>,
@@ -111,11 +111,13 @@ impl GhidraAnalysis {
         match backend {
             GhidraBackend::ReOxide => {
                 // Try ReOxide first, fallback to HeadlessCli if it fails
-                Self::analyze_reoxide(dol_path)
-                    .or_else(|e| {
-                        log::warn!("ReOxide analysis failed: {}. Falling back to HeadlessCli.", e);
-                        Self::analyze_headless(dol_path)
-                    })
+                Self::analyze_reoxide(dol_path).or_else(|e| {
+                    log::warn!(
+                        "ReOxide analysis failed: {}. Falling back to HeadlessCli.",
+                        e
+                    );
+                    Self::analyze_headless(dol_path)
+                })
             }
             GhidraBackend::HeadlessCli => Self::analyze_headless(dol_path),
         }
@@ -138,16 +140,16 @@ impl GhidraAnalysis {
     #[inline(never)] // Large function - don't inline
     fn analyze_reoxide(dol_path: &str) -> Result<Self> {
         log::info!("Using ReOxide backend for enhanced Ghidra analysis...");
-        
+
         // Step 1: Ensure ReOxide is installed
         Self::ensure_reoxide_installed()?;
-        
+
         // Step 2: Ensure ReOxide is configured
         Self::ensure_reoxide_configured()?;
-        
+
         // Step 3: Ensure Ghidra scripts are installed
         Self::ensure_ghidra_scripts_installed()?;
-        
+
         // Step 4: Use ReOxide-enhanced Ghidra analysis
         // ReOxide works with Ghidra, so we still use analyzeHeadless but with ReOxide scripts
         let dol_path = Path::new(dol_path);
@@ -168,7 +170,7 @@ impl GhidraAnalysis {
         // Find Ghidra installation
         let ghidra_path = find_ghidra()?;
         let analyze_headless = ghidra_path.join("support").join("analyzeHeadless");
-        
+
         // Use ReOxide-enhanced export script
         let script_path = find_or_create_reoxide_export_script(&ghidra_path)?;
 
@@ -192,12 +194,14 @@ impl GhidraAnalysis {
 
         // Step 2: Run ReOxide-enhanced export script
         log::info!("Running ReOxide-enhanced export script...");
-        let script_dir = script_path.parent()
+        let script_dir = script_path
+            .parent()
             .context("Script path has no parent directory")?;
-        let script_name = script_path.file_name()
+        let script_name = script_path
+            .file_name()
             .and_then(|n| n.to_str())
             .context("Invalid script filename")?;
-        
+
         let script_output = Command::new(&analyze_headless)
             .arg(&project_dir)
             .arg(project_name)
@@ -242,26 +246,17 @@ impl GhidraAnalysis {
     #[inline] // May be called frequently
     fn ensure_reoxide_installed() -> Result<()> {
         // Check if reoxide is already available
-        if Command::new("reoxide")
-            .arg("--version")
-            .output()
-            .is_ok() {
+        if Command::new("reoxide").arg("--version").output().is_ok() {
             log::info!("ReOxide is already installed");
             return Ok(());
         }
 
         log::info!("ReOxide not found. Installing ReOxide...");
-        
+
         // Try pipx first (preferred for CLI tools)
-        let install_result = if Command::new("pipx")
-            .arg("--version")
-            .output()
-            .is_ok() {
+        let install_result = if Command::new("pipx").arg("--version").output().is_ok() {
             log::info!("Installing ReOxide via pipx...");
-            Command::new("pipx")
-                .arg("install")
-                .arg("reoxide")
-                .output()
+            Command::new("pipx").arg("install").arg("reoxide").output()
         } else {
             // Fallback to pip
             log::info!("Installing ReOxide via pip...");
@@ -298,9 +293,7 @@ impl GhidraAnalysis {
     fn ensure_reoxide_configured() -> Result<()> {
         // Check if ReOxide config exists (it creates a config file)
         // For now, we'll just try to run init-config and ignore if it already exists
-        let config_result = Command::new("reoxide")
-            .arg("init-config")
-            .output();
+        let config_result = Command::new("reoxide").arg("init-config").output();
 
         match config_result {
             Ok(output) if output.status.success() => {
@@ -313,7 +306,10 @@ impl GhidraAnalysis {
                 Ok(())
             }
             Err(e) => {
-                log::warn!("Could not initialize ReOxide config: {}. Continuing anyway.", e);
+                log::warn!(
+                    "Could not initialize ReOxide config: {}. Continuing anyway.",
+                    e
+                );
                 Ok(()) // Non-fatal, continue
             }
         }
@@ -329,7 +325,7 @@ impl GhidraAnalysis {
     #[inline] // May be called frequently
     fn ensure_ghidra_scripts_installed() -> Result<()> {
         log::info!("Installing ReOxide Ghidra scripts...");
-        
+
         let script_result = Command::new("reoxide")
             .arg("install-ghidra-scripts")
             .output()
@@ -387,12 +383,14 @@ impl GhidraAnalysis {
 
         // Step 2: Run export script
         log::info!("Running Ghidra export script...");
-        let script_dir = script_path.parent()
+        let script_dir = script_path
+            .parent()
             .context("Script path has no parent directory")?;
-        let script_name = script_path.file_name()
+        let script_name = script_path
+            .file_name()
             .and_then(|n| n.to_str())
             .context("Invalid script filename")?;
-        
+
         let script_output = Command::new(&analyze_headless)
             .arg(&project_dir)
             .arg(project_name)
@@ -443,7 +441,9 @@ fn find_ghidra() -> Result<std::path::PathBuf> {
     ];
 
     // Also check environment variable
-    let env_path = std::env::var("GHIDRA_INSTALL_DIR").ok().map(std::path::PathBuf::from);
+    let env_path = std::env::var("GHIDRA_INSTALL_DIR")
+        .ok()
+        .map(std::path::PathBuf::from);
 
     let all_paths = common_paths.into_iter().chain(env_path);
 
@@ -467,7 +467,11 @@ fn find_or_create_export_script(ghidra_path: &Path) -> Result<PathBuf> {
     }
 
     // Try to find it in Ghidra scripts directory
-    let ghidra_scripts = ghidra_path.join("Ghidra").join("Features").join("Python").join("ghidra_scripts");
+    let ghidra_scripts = ghidra_path
+        .join("Ghidra")
+        .join("Features")
+        .join("Python")
+        .join("ghidra_scripts");
     if ghidra_scripts.exists() {
         let script = ghidra_scripts.join("ghidra_export.py");
         if script.exists() {
@@ -479,7 +483,7 @@ fn find_or_create_export_script(ghidra_path: &Path) -> Result<PathBuf> {
     let script_content = include_str!("../../scripts/ghidra_export.py");
     std::fs::write(&script_path, script_content)
         .context("Failed to create Ghidra export script")?;
-    
+
     Ok(script_path)
 }
 
@@ -497,13 +501,16 @@ fn find_or_create_reoxide_export_script(ghidra_path: &Path) -> Result<PathBuf> {
     let home_dir = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok();
-    
+
     if let Some(home) = home_dir {
         let reoxide_script = PathBuf::from(&home)
             .join("ghidra_scripts")
             .join("reoxide_export.py");
         if reoxide_script.exists() {
-            log::info!("Found ReOxide export script at: {}", reoxide_script.display());
+            log::info!(
+                "Found ReOxide export script at: {}",
+                reoxide_script.display()
+            );
             return Ok(reoxide_script);
         }
     }
@@ -520,15 +527,15 @@ fn parse_functions_json(export_dir: &Path) -> Result<Vec<FunctionInfo>> {
         return Ok(vec![]);
     }
 
-    let content = std::fs::read_to_string(&json_path)
-        .context("Failed to read functions.json")?;
-    
-    let raw_functions: Vec<serde_json::Value> = serde_json::from_str(&content)
-        .context("Failed to parse functions.json")?;
+    let content = std::fs::read_to_string(&json_path).context("Failed to read functions.json")?;
+
+    let raw_functions: Vec<serde_json::Value> =
+        serde_json::from_str(&content).context("Failed to parse functions.json")?;
 
     let mut functions = Vec::new();
     for func in raw_functions {
-        let address_str = func["address"].as_str()
+        let address_str = func["address"]
+            .as_str()
             .context("Missing address in function")?;
         let address = parse_address(address_str)?;
 
@@ -575,7 +582,10 @@ fn parse_functions_json(export_dir: &Path) -> Result<Vec<FunctionInfo>> {
             address,
             name: func["name"].as_str().unwrap_or("unknown").to_string(),
             size: func["size"].as_u64().unwrap_or(0) as u32,
-            calling_convention: func["calling_convention"].as_str().unwrap_or("default").to_string(),
+            calling_convention: func["calling_convention"]
+                .as_str()
+                .unwrap_or("default")
+                .to_string(),
             parameters,
             return_type: func["return_type"].as_str().map(|s| s.to_string()),
             local_variables: local_vars,
@@ -593,15 +603,15 @@ fn parse_symbols_json(export_dir: &Path) -> Result<Vec<SymbolInfo>> {
         return Ok(vec![]);
     }
 
-    let content = std::fs::read_to_string(&json_path)
-        .context("Failed to read symbols.json")?;
-    
-    let raw_symbols: Vec<serde_json::Value> = serde_json::from_str(&content)
-        .context("Failed to parse symbols.json")?;
+    let content = std::fs::read_to_string(&json_path).context("Failed to read symbols.json")?;
+
+    let raw_symbols: Vec<serde_json::Value> =
+        serde_json::from_str(&content).context("Failed to parse symbols.json")?;
 
     let mut symbols = Vec::new();
     for sym in raw_symbols {
-        let address_str = sym["address"].as_str()
+        let address_str = sym["address"]
+            .as_str()
             .context("Missing address in symbol")?;
         let address = parse_address(address_str)?;
 
@@ -630,25 +640,33 @@ fn parse_decompiled_json(export_dir: &Path) -> Result<HashMap<u32, DecompiledFun
         return Ok(HashMap::new());
     }
 
-    let content = std::fs::read_to_string(&json_path)
-        .context("Failed to read decompiled.json")?;
-    
-    let raw_decompiled: HashMap<String, serde_json::Value> = serde_json::from_str(&content)
-        .context("Failed to parse decompiled.json")?;
+    let content = std::fs::read_to_string(&json_path).context("Failed to read decompiled.json")?;
+
+    let raw_decompiled: HashMap<String, serde_json::Value> =
+        serde_json::from_str(&content).context("Failed to parse decompiled.json")?;
 
     let mut decompiled = HashMap::new();
     for (addr_str, func_data) in raw_decompiled {
         let address = parse_address(&addr_str)?;
-        decompiled.insert(address, DecompiledFunction {
-            c_code: func_data["c_code"].as_str().unwrap_or("").to_string(),
-            high_function: func_data["high_function"].as_str().unwrap_or("").to_string(),
-        });
+        decompiled.insert(
+            address,
+            DecompiledFunction {
+                c_code: func_data["c_code"].as_str().unwrap_or("").to_string(),
+                high_function: func_data["high_function"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+            },
+        );
     }
 
     Ok(decompiled)
 }
 
-fn extract_instructions(_project_dir: &Path, _project_name: &str) -> Result<HashMap<u32, Vec<InstructionData>>> {
+fn extract_instructions(
+    _project_dir: &Path,
+    _project_name: &str,
+) -> Result<HashMap<u32, Vec<InstructionData>>> {
     // TODO: Extract instruction-level data from Ghidra
     // This would require parsing the listing or using a script
     Ok(HashMap::new())
@@ -661,4 +679,3 @@ fn parse_address(addr_str: &str) -> Result<u32> {
         .or_else(|_| cleaned.parse::<u32>())
         .context(format!("Failed to parse address: {}", addr_str))
 }
-

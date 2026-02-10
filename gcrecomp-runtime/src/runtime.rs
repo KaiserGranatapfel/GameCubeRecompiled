@@ -1,10 +1,14 @@
 // Complete runtime system integration
+use crate::audio::ai::AudioInterface;
+use crate::audio::mixer::AudioMixer;
+use crate::audio::output::AudioOutput;
 use crate::graphics::Renderer;
 use crate::input::ControllerManager;
 use crate::memory::{ARam, DmaSystem, Ram, VRam};
 use crate::texture::TextureLoader;
+use crate::video::VideoInterface;
 use anyhow::Result;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub struct Runtime {
     controller_manager: ControllerManager,
@@ -14,10 +18,17 @@ pub struct Runtime {
     vram: VRam,
     aram: ARam,
     dma: DmaSystem,
+    video: VideoInterface,
+    audio: AudioInterface,
+    audio_mixer: Arc<Mutex<AudioMixer>>,
+    audio_output: AudioOutput,
 }
 
 impl Runtime {
     pub fn new() -> Result<Self> {
+        let audio_mixer = Arc::new(Mutex::new(AudioMixer::new(48000)));
+        let audio_output = AudioOutput::new(audio_mixer.clone());
+
         Ok(Self {
             controller_manager: ControllerManager::new()?,
             renderer: None,
@@ -26,6 +37,10 @@ impl Runtime {
             vram: VRam::new(),
             aram: ARam::new(),
             dma: DmaSystem::new(),
+            video: VideoInterface::new(),
+            audio: AudioInterface::new(),
+            audio_mixer,
+            audio_output,
         })
     }
 
@@ -34,12 +49,23 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn initialize_audio(&mut self) -> Result<()> {
+        self.audio.init();
+        self.audio_output.start()?;
+        Ok(())
+    }
+
     pub fn update(&mut self) -> Result<()> {
         // Update controller manager
         self.controller_manager.update()?;
 
-        // Update DMA transfers
         // Process any active DMA transfers
+        for ch in 0..4 {
+            if self.dma.is_active(ch) {
+                // Execute transfer would happen here with RAM/ARAM access
+                self.dma.complete_transfer(ch);
+            }
+        }
 
         Ok(())
     }
@@ -85,5 +111,25 @@ impl Runtime {
 
     pub fn texture_loader_mut(&mut self) -> &mut TextureLoader {
         &mut self.texture_loader
+    }
+
+    pub fn video(&self) -> &VideoInterface {
+        &self.video
+    }
+
+    pub fn video_mut(&mut self) -> &mut VideoInterface {
+        &mut self.video
+    }
+
+    pub fn audio(&self) -> &AudioInterface {
+        &self.audio
+    }
+
+    pub fn audio_mut(&mut self) -> &mut AudioInterface {
+        &mut self.audio
+    }
+
+    pub fn audio_mixer(&self) -> &Arc<Mutex<AudioMixer>> {
+        &self.audio_mixer
     }
 }

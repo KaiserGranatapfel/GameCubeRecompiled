@@ -10,7 +10,7 @@ pub struct ControllerManager {
     controllers: HashMap<usize, ControllerState>,
     gamecube_mappings: HashMap<usize, GameCubeMapping>,
     profiles: HashMap<String, ControllerProfile>,
-    next_id: usize,
+    _next_id: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +48,7 @@ impl ControllerManager {
             controllers: HashMap::new(),
             gamecube_mappings: HashMap::new(),
             profiles: HashMap::new(),
-            next_id: 0,
+            _next_id: 0,
         })
     }
 
@@ -64,14 +64,16 @@ impl ControllerManager {
 
         // Check for new controllers
         for controller in &all_controller_infos {
-            if !self.controllers.contains_key(&controller.id) {
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                self.controllers.entry(controller.id)
+            {
                 let state = ControllerState {
                     id: controller.id,
                     info: controller.clone(),
                     connected: true,
                     last_update: std::time::Instant::now(),
                 };
-                self.controllers.insert(controller.id, state);
+                entry.insert(state);
 
                 // Load default profile or create new mapping
                 self.load_default_mapping(controller.id)?;

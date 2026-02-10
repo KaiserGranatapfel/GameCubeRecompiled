@@ -14,6 +14,12 @@ pub enum UpscaleAlgorithm {
     Lanczos3,
 }
 
+impl Default for TextureUpscaler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TextureUpscaler {
     pub fn new() -> Self {
         Self {

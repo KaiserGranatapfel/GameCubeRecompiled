@@ -12,53 +12,83 @@ pub struct LuaMemoryManager {
 impl UserData for LuaMemoryManager {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("read_u8", |_, this, addr: u32| {
-            let mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.read_u8(addr).map_err(mlua::Error::external)
         });
 
         methods.add_method("read_u16", |_, this, addr: u32| {
-            let mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.read_u16(addr).map_err(mlua::Error::external)
         });
 
         methods.add_method("read_u32", |_, this, addr: u32| {
-            let mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.read_u32(addr).map_err(mlua::Error::external)
         });
 
         methods.add_method("read_u64", |_, this, addr: u32| {
-            let mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.read_u64(addr).map_err(mlua::Error::external)
         });
 
         methods.add_method("read_bytes", |_, this, (addr, len): (u32, usize)| {
-            let mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             let bytes = mem.read_bytes(addr, len).map_err(mlua::Error::external)?;
             Ok(bytes)
         });
 
         methods.add_method("write_u8", |_, this, (addr, val): (u32, u8)| {
-            let mut mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.write_u8(addr, val).map_err(mlua::Error::external)
         });
 
         methods.add_method("write_u16", |_, this, (addr, val): (u32, u16)| {
-            let mut mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.write_u16(addr, val).map_err(mlua::Error::external)
         });
 
         methods.add_method("write_u32", |_, this, (addr, val): (u32, u32)| {
-            let mut mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.write_u32(addr, val).map_err(mlua::Error::external)
         });
 
         methods.add_method("write_u64", |_, this, (addr, val): (u32, u64)| {
-            let mut mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.write_u64(addr, val).map_err(mlua::Error::external)
         });
 
         methods.add_method("write_bytes", |_, this, (addr, data): (u32, Vec<u8>)| {
-            let mut mem = this.inner.lock().map_err(|e| mlua::Error::external(e.to_string()))?;
+            let mut mem = this
+                .inner
+                .lock()
+                .map_err(|e| mlua::Error::external(e.to_string()))?;
             mem.write_bytes(addr, &data).map_err(mlua::Error::external)
         });
     }
