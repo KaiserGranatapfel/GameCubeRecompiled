@@ -18,4 +18,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 crc32fast = { workspace = true }
 sha2 = { workspace = true }
+zip = { workspace = true }
 dirs = "5.0"
+zstd = { workspace = true }

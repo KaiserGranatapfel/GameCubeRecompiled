@@ -16,11 +16,14 @@ path = "src/main.rs"
 gcrecomp-core = { path = "../gcrecomp-core" }
 gcrecomp-lua = { path = "../gcrecomp-lua" }
 gcrecomp-ui = { path = "../gcrecomp-ui" }
+mlua = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { version = "0.1", features = ["sync"] }
 tower-http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = "0.11"
+zip = { workspace = true }

@@ -121,8 +121,18 @@ pub fn register(lua: &Lua, gcrecomp: &Table) -> anyhow::Result<()> {
         })
         .into_anyhow()?;
 
+    let embed_assets_fn = lua
+        .create_function(|_, ()| {
+            RecompilationPipeline::stage_embed_assets().map_err(mlua::Error::external)?;
+            Ok(())
+        })
+        .into_anyhow()?;
+
     pipeline_table
         .set("new_context", new_context_fn)
+        .into_anyhow()?;
+    pipeline_table
+        .set("embed_assets", embed_assets_fn)
         .into_anyhow()?;
     gcrecomp.set("pipeline", pipeline_table).into_anyhow()?;
     Ok(())

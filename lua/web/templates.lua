@@ -1,0 +1,451 @@
+-- HTML templates for GCRecomp web dashboard
+-- All UI markup lives here; Rust is just HTTP transport.
+
+local templates = {}
+
+function templates.css()
+    return [[
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e; color: #e0e0e0; min-height: 100vh;
+        }
+        .container { max-width: 920px; margin: 0 auto; padding: 2rem; }
+        h1 { color: #7b68ee; margin-bottom: 0.5rem; }
+        .subtitle { color: #888; margin-bottom: 2rem; }
+        .card {
+            background: #16213e; border-radius: 8px; padding: 1.5rem;
+            margin-bottom: 1.5rem; border: 1px solid #0f3460;
+        }
+        .card h2 { color: #7b68ee; margin-bottom: 1rem; font-size: 1.1rem; }
+
+        /* Form row */
+        .form-row { display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 180px; }
+        .form-group label { display: block; margin-bottom: 0.4rem; color: #aaa; font-size: 0.85rem; }
+        .form-group input[type="text"] {
+            width: 100%; padding: 0.55rem 0.75rem; background: #0f3460;
+            border: 1px solid #533483; border-radius: 4px; color: #e0e0e0;
+            font-size: 0.95rem; outline: none; transition: border-color 0.2s;
+        }
+        .form-group input[type="text"]:focus { border-color: #7b68ee; }
+
+        /* Target selector */
+        .target-group { flex: 2; min-width: 300px; }
+        .target-options { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .target-btn {
+            flex: 1; min-width: 100px; padding: 0.5rem 0.75rem; background: #0f3460;
+            border: 2px solid #0f3460; border-radius: 6px; color: #888;
+            cursor: pointer; text-align: center; transition: all 0.2s; font-size: 0.85rem;
+        }
+        .target-btn:hover { border-color: #533483; color: #bbb; }
+        .target-btn.selected { border-color: #7b68ee; color: #e0e0e0; background: #1a2a50; }
+        .target-btn .os-name { font-weight: 600; }
+        .target-btn .os-arch { font-size: 0.75rem; color: #666; display: block; margin-top: 2px; }
+        .target-btn.selected .os-arch { color: #999; }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed #533483; border-radius: 8px; padding: 2rem 1rem;
+            text-align: center; cursor: pointer; transition: all 0.3s ease;
+            position: relative;
+        }
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: #7b68ee; background: rgba(123, 104, 238, 0.05);
+        }
+        .drop-zone.disabled {
+            opacity: 0.4; cursor: not-allowed; pointer-events: none;
+        }
+        .drop-zone svg { width: 44px; height: 44px; margin-bottom: 0.5rem; }
+        .drop-zone p { color: #aaa; }
+        .drop-zone .hint { font-size: 0.85rem; color: #666; margin-top: 0.4rem; }
+        .file-badge {
+            display: inline-block; margin-top: 0.75rem; padding: 0.3rem 0.75rem;
+            background: #0f3460; border-radius: 4px; font-size: 0.85rem; color: #8fdf8f;
+        }
+
+        /* Pipeline stages */
+        .pipeline-stages {
+            display: flex; gap: 3px; margin-bottom: 1rem; overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .stage {
+            flex: 1; text-align: center; padding: 0.55rem 0.2rem; border-radius: 4px;
+            font-size: 0.65rem; background: #0f3460; color: #445; transition: all 0.3s ease;
+            min-width: 64px; white-space: nowrap; font-weight: 500; text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .stage.active {
+            background: #7b68ee; color: white; animation: pulse 1.5s ease-in-out infinite;
+        }
+        .stage.done { background: #1e5a1e; color: #8fdf8f; }
+        .stage.error { background: #5a1e1e; color: #df8f8f; }
+        .status-message { font-size: 0.9rem; color: #aaa; min-height: 1.25rem; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        /* Stats grid */
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+        .stat {
+            background: #0f3460; padding: 1rem 0.5rem; border-radius: 6px; text-align: center;
+        }
+        .stat .value { font-size: 1.5rem; color: #7b68ee; font-weight: 600; }
+        .stat .label { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+
+        /* Download button */
+        .download-row { margin-top: 1rem; text-align: center; }
+        .download-btn {
+            display: inline-block; padding: 0.7rem 1.5rem; background: #1e5a1e;
+            color: #8fdf8f; border: 1px solid #2d7a2d; border-radius: 6px;
+            text-decoration: none; font-size: 0.95rem; font-weight: 600;
+            transition: background 0.2s;
+        }
+        .download-btn:hover { background: #267a26; }
+
+        /* Error */
+        .error-card { border-color: #6a2d2d; }
+        .error-card h2 { color: #e07070; }
+        #error-message {
+            color: #e0a0a0; font-family: monospace; font-size: 0.85rem;
+            white-space: pre-wrap; word-break: break-word; max-height: 300px;
+            overflow-y: auto;
+        }
+
+        /* Config */
+        #config-area pre {
+            background: #0f3460; padding: 1rem; border-radius: 4px;
+            overflow-x: auto; font-size: 0.85rem; color: #ccc; max-height: 300px;
+            overflow-y: auto;
+        }
+
+        @media (max-width: 640px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .pipeline-stages { flex-wrap: wrap; }
+            .stage { min-width: 0; flex: 1 1 calc(20% - 3px); }
+            .form-row { flex-direction: column; }
+        }
+    ]]
+end
+
+function templates.upload_card(targets)
+    local btns = {}
+    for i, t in ipairs(targets) do
+        -- Parse display name: "x86_64 Linux" -> os="Linux", arch="x86_64"
+        local arch, os_name = t.name:match("^(%S+)%s+(.+)$")
+        if not arch then
+            os_name = t.name
+            arch = ""
+        end
+        local sel = (i == 1) and ' selected' or ''
+        btns[#btns + 1] = '<div class="target-btn' .. sel .. '" data-target="'
+            .. t.id .. '" onclick="selectTarget(this)">'
+            .. '<span class="os-name">' .. os_name .. '</span>'
+            .. '<span class="os-arch">' .. arch .. '</span></div>'
+    end
+
+    return '<div class="card"><h2>Recompile</h2>'
+        .. '<div class="form-row">'
+        .. '<div class="form-group">'
+        .. '<label for="game-title">Game Title</label>'
+        .. '<input type="text" id="game-title" placeholder="e.g. MyGame" value="game">'
+        .. '</div>'
+        .. '<div class="form-group target-group">'
+        .. '<label>Target Platform</label>'
+        .. '<div class="target-options">' .. table.concat(btns) .. '</div>'
+        .. '</div></div>'
+        .. '<div id="drop-zone" class="drop-zone">'
+        .. '<svg viewBox="0 0 24 24" fill="none" stroke="#533483" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+        .. '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'
+        .. '<polyline points="17 8 12 3 7 8"/>'
+        .. '<line x1="12" y1="3" x2="12" y2="15"/>'
+        .. '</svg>'
+        .. '<p>Drag &amp; drop a <strong>.dol</strong>, <strong>.rvz</strong>, <strong>.iso</strong>, <strong>.gcm</strong>, or <strong>.zip</strong> file here</p>'
+        .. '<p class="hint">or click to browse</p>'
+        .. '<div id="file-badge" class="file-badge" style="display:none"></div>'
+        .. '<input type="file" id="file-input" accept=".dol,.zip,.iso,.gcm,.rvz" hidden>'
+        .. '</div></div>'
+end
+
+function templates.pipeline_card()
+    local stages = {
+        { id = "upload",         label = "Upload" },
+        { id = "load_dol",      label = "Load DOL" },
+        { id = "analyze",       label = "Analyze" },
+        { id = "decode",        label = "Decode" },
+        { id = "build_cfg",     label = "Build CFG" },
+        { id = "data_flow",     label = "Data Flow" },
+        { id = "type_inference", label = "Type Infer" },
+        { id = "codegen",       label = "Code Gen" },
+        { id = "validate",      label = "Validate" },
+        { id = "write_output",  label = "Write Out" },
+        { id = "compile",       label = "Compile" },
+    }
+    local parts = {}
+    for _, s in ipairs(stages) do
+        parts[#parts + 1] = '<div class="stage" data-stage="' .. s.id .. '">' .. s.label .. '</div>'
+    end
+    return '<div id="pipeline-card" class="card" style="display:none">'
+        .. '<h2>Pipeline</h2>'
+        .. '<div class="pipeline-stages">' .. table.concat(parts) .. '</div>'
+        .. '<div id="status-message" class="status-message"></div>'
+        .. '</div>'
+end
+
+function templates.stats_card()
+    return '<div id="stats-card" class="card" style="display:none">'
+        .. '<h2>Results</h2>'
+        .. '<div id="stats" class="stats"></div>'
+        .. '<div id="download-row" class="download-row" style="display:none">'
+        .. '<a id="download-link" class="download-btn" href="#" download>Download</a>'
+        .. '</div></div>'
+end
+
+function templates.error_card()
+    return '<div id="error-card" class="card error-card" style="display:none">'
+        .. '<h2>Error</h2>'
+        .. '<div id="error-message"></div></div>'
+end
+
+function templates.config_card()
+    return '<div class="card"><h2>Configuration</h2>'
+        .. '<div id="config-area">Loading...</div></div>'
+end
+
+function templates.javascript()
+    return [[
+        const STAGES = [
+            'upload', 'load_dol', 'analyze', 'decode', 'build_cfg',
+            'data_flow', 'type_inference', 'codegen', 'validate', 'write_output', 'compile'
+        ];
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileBadge = document.getElementById('file-badge');
+        let eventSource = null;
+        let selectedTarget = 'x86_64-linux';
+
+        /* --- Target selector --- */
+        function selectTarget(el) {
+            document.querySelectorAll('.target-btn').forEach(b => b.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedTarget = el.dataset.target;
+        }
+
+        /* --- Drop zone events --- */
+        dropZone.addEventListener('click', () => {
+            if (!dropZone.classList.contains('disabled')) fileInput.click();
+        });
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!dropZone.classList.contains('disabled')) dropZone.classList.add('drag-over');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (!dropZone.classList.contains('disabled') && e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) {
+                handleFile(fileInput.files[0]);
+                fileInput.value = '';
+            }
+        });
+
+        /* --- Main upload flow --- */
+        async function handleFile(file) {
+            const name = file.name.toLowerCase();
+            const validExts = ['.dol', '.zip', '.iso', '.gcm', '.rvz'];
+            if (!validExts.some(ext => name.endsWith(ext))) {
+                showError('Invalid file type. Accepted: .dol, .zip, .iso, .gcm, .rvz');
+                return;
+            }
+
+            // Reset UI
+            hideError();
+            document.getElementById('pipeline-card').style.display = '';
+            document.getElementById('stats-card').style.display = 'none';
+            document.getElementById('download-row').style.display = 'none';
+            resetStages();
+            dropZone.classList.add('disabled');
+
+            // Show selected filename
+            fileBadge.textContent = file.name;
+            fileBadge.style.display = 'inline-block';
+
+            // Send raw file body with metadata in headers
+            const gameTitle = document.getElementById('game-title').value.trim() || 'game';
+
+            try {
+                const res = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: file,
+                    headers: {
+                        'X-File-Name': file.name,
+                        'X-Game-Title': gameTitle,
+                        'X-Target': selectedTarget,
+                    }
+                });
+                if (!res.ok) {
+                    let errText;
+                    try { errText = await res.text(); } catch (_) { errText = res.statusText; }
+                    showError(errText);
+                    dropZone.classList.remove('disabled');
+                    return;
+                }
+
+                // Upload succeeded -- connect SSE for live updates
+                connectSSE();
+
+            } catch (e) {
+                showError('Network error: ' + e.message);
+                dropZone.classList.remove('disabled');
+            }
+        }
+
+        /* --- SSE --- */
+        function connectSSE() {
+            if (eventSource) eventSource.close();
+            eventSource = new EventSource('/api/status');
+            eventSource.onmessage = handleSSE;
+            eventSource.onerror = () => {};
+        }
+
+        function handleSSE(event) {
+            let data;
+            try { data = JSON.parse(event.data); } catch (_) { return; }
+
+            if (data.state === 'running') {
+                setStageActive(data.stage);
+                document.getElementById('status-message').textContent = data.message || '';
+            } else if (data.state === 'complete') {
+                completeAllStages();
+                document.getElementById('status-message').textContent = data.message || 'Done';
+                showStats(data.stats);
+                if (data.binary_path) showDownload(data.binary_path);
+                cleanup();
+            } else if (data.state === 'error') {
+                markStageError(data.stage);
+                document.getElementById('status-message').textContent = '';
+                showError(data.error || data.message || 'Unknown error');
+                if (data.stats) showStats(data.stats);
+                cleanup();
+            }
+        }
+
+        function cleanup() {
+            if (eventSource) { eventSource.close(); eventSource = null; }
+            dropZone.classList.remove('disabled');
+        }
+
+        /* --- Stage management --- */
+        function resetStages() {
+            STAGES.forEach(s => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (el) el.className = 'stage';
+            });
+            document.getElementById('status-message').textContent = '';
+        }
+
+        function setStageActive(stage) {
+            const idx = STAGES.indexOf(stage);
+            if (idx === -1) return;
+            STAGES.forEach((s, i) => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (!el) return;
+                if (i < idx) el.className = 'stage done';
+                else if (i === idx) el.className = 'stage active';
+                else el.className = 'stage';
+            });
+        }
+
+        function completeAllStages() {
+            STAGES.forEach(s => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (el) el.className = 'stage done';
+            });
+        }
+
+        function markStageError(stage) {
+            const idx = STAGES.indexOf(stage);
+            STAGES.forEach((s, i) => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (!el) return;
+                if (idx >= 0 && i < idx) el.className = 'stage done';
+                else if (idx >= 0 && i === idx) el.className = 'stage error';
+            });
+        }
+
+        /* --- Results --- */
+        function showStats(stats) {
+            if (!stats) return;
+            document.getElementById('stats-card').style.display = '';
+            document.getElementById('stats').innerHTML =
+                '<div class="stat"><div class="value">' + (stats.total_functions || 0) + '</div><div class="label">Total Functions</div></div>' +
+                '<div class="stat"><div class="value">' + (stats.successful_functions || 0) + '</div><div class="label">Successful</div></div>' +
+                '<div class="stat"><div class="value">' + (stats.failed_functions || 0) + '</div><div class="label">Failed</div></div>' +
+                '<div class="stat"><div class="value">' + (stats.total_instructions || 0) + '</div><div class="label">Instructions</div></div>';
+        }
+
+        function showDownload(filename) {
+            const row = document.getElementById('download-row');
+            const link = document.getElementById('download-link');
+            link.href = '/output/' + encodeURIComponent(filename);
+            link.textContent = 'Download ' + filename;
+            row.style.display = '';
+        }
+
+        /* --- Error handling --- */
+        function showError(message) {
+            document.getElementById('error-card').style.display = '';
+            document.getElementById('error-message').textContent = message;
+        }
+
+        function hideError() {
+            document.getElementById('error-card').style.display = 'none';
+            document.getElementById('error-message').textContent = '';
+        }
+
+        /* --- Config --- */
+        async function loadConfig() {
+            try {
+                const res = await fetch('/api/config');
+                if (!res.ok) throw new Error(res.statusText);
+                const config = await res.json();
+                document.getElementById('config-area').innerHTML =
+                    '<pre>' + JSON.stringify(config, null, 2) + '</pre>';
+            } catch (e) {
+                document.getElementById('config-area').textContent = 'Failed to load config';
+            }
+        }
+
+        loadConfig();
+    ]]
+end
+
+function templates.index(targets)
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
+        .. '<meta charset="UTF-8">\n'
+        .. '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+        .. '<title>GCRecomp Dashboard</title>\n'
+        .. '<style>' .. templates.css() .. '</style>\n'
+        .. '</head>\n<body>\n'
+        .. '<div class="container">\n'
+        .. '<h1>GCRecomp Dashboard</h1>\n'
+        .. '<p class="subtitle">GameCube Static Recompiler</p>\n'
+        .. templates.upload_card(targets)
+        .. templates.pipeline_card()
+        .. templates.stats_card()
+        .. templates.error_card()
+        .. templates.config_card()
+        .. '</div>\n'
+        .. '<script>' .. templates.javascript() .. '</script>\n'
+        .. '</body>\n</html>'
+end
+
+return templates

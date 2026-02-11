@@ -434,11 +434,33 @@ impl GhidraAnalysis {
 
 fn find_ghidra() -> Result<std::path::PathBuf> {
     // Check common Ghidra installation locations
-    let common_paths: Vec<std::path::PathBuf> = vec![
+    let home = std::env::var("HOME").unwrap_or_default();
+    let auto_install_dir = PathBuf::from(&home)
+        .join(".local")
+        .join("share")
+        .join("gcrecomp");
+
+    let mut common_paths: Vec<std::path::PathBuf> = vec![
         "/usr/local/ghidra".into(),
         "/opt/ghidra".into(),
         "/Applications/ghidra".into(),
     ];
+
+    // Check auto-install location for previously downloaded Ghidra
+    if auto_install_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&auto_install_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("ghidra_") {
+                            common_paths.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Also check environment variable
     let env_path = std::env::var("GHIDRA_INSTALL_DIR")
@@ -454,9 +476,158 @@ fn find_ghidra() -> Result<std::path::PathBuf> {
         }
     }
 
-    anyhow::bail!(
-        "Ghidra not found. Please set GHIDRA_INSTALL_DIR environment variable or install Ghidra in a standard location."
+    // Ghidra not found — download automatically
+    log::info!("Ghidra not found locally. Downloading automatically...");
+    download_and_install_ghidra()
+}
+
+/// Get the Ghidra download URL by querying the GitHub releases API.
+/// Falls back to a known-good version if the API call fails.
+fn get_ghidra_download_url() -> Result<String> {
+    let api_output = Command::new("curl")
+        .arg("-sL")
+        .arg("https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest")
+        .output();
+
+    if let Ok(output) = api_output {
+        if output.status.success() {
+            let body = String::from_utf8_lossy(&output.stdout);
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(assets) = json["assets"].as_array() {
+                    for asset in assets {
+                        if let Some(name) = asset["name"].as_str() {
+                            if name.ends_with(".zip") && name.contains("PUBLIC") {
+                                if let Some(url) =
+                                    asset["browser_download_url"].as_str()
+                                {
+                                    log::info!(
+                                        "Found latest Ghidra release: {}",
+                                        name
+                                    );
+                                    return Ok(url.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to a known-good version
+    log::warn!(
+        "Could not determine latest Ghidra version from GitHub API, using fallback"
     );
+    Ok("https://github.com/NationalSecurityAgency/ghidra/releases/download/\
+        Ghidra_11.3.1_build/ghidra_11.3.1_PUBLIC_20250219.zip"
+        .to_string())
+}
+
+/// Download and install Ghidra to ~/.local/share/gcrecomp/.
+fn download_and_install_ghidra() -> Result<PathBuf> {
+    let home = std::env::var("HOME").context("HOME environment variable not set")?;
+    let install_base = PathBuf::from(&home)
+        .join(".local")
+        .join("share")
+        .join("gcrecomp");
+    std::fs::create_dir_all(&install_base)?;
+
+    let download_url = get_ghidra_download_url()?;
+    let zip_path = install_base.join("ghidra_download.zip");
+
+    // Download using curl (preferred) or wget (fallback)
+    log::info!("Downloading Ghidra from {}...", download_url);
+    let curl_status = Command::new("curl")
+        .arg("-L")
+        .arg("-o")
+        .arg(&zip_path)
+        .arg("--progress-bar")
+        .arg(&download_url)
+        .status();
+
+    match curl_status {
+        Ok(status) if status.success() => {}
+        _ => {
+            log::info!("curl failed or not found, trying wget...");
+            let wget_status = Command::new("wget")
+                .arg("-O")
+                .arg(&zip_path)
+                .arg(&download_url)
+                .status()
+                .context(
+                    "Failed to download Ghidra. Please install curl or wget.",
+                )?;
+
+            if !wget_status.success() {
+                anyhow::bail!("Failed to download Ghidra archive");
+            }
+        }
+    }
+
+    // Extract the archive
+    log::info!("Extracting Ghidra...");
+    let unzip_status = Command::new("unzip")
+        .arg("-o")
+        .arg("-q")
+        .arg(&zip_path)
+        .arg("-d")
+        .arg(&install_base)
+        .status()
+        .context("Failed to run unzip. Please install unzip.")?;
+
+    if !unzip_status.success() {
+        anyhow::bail!("Failed to extract Ghidra archive");
+    }
+
+    // Find the extracted ghidra_*_PUBLIC directory
+    let mut ghidra_dir: Option<PathBuf> = None;
+    for entry in std::fs::read_dir(&install_base)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("ghidra_") {
+                    ghidra_dir = Some(path);
+                    break;
+                }
+            }
+        }
+    }
+
+    let ghidra_dir = ghidra_dir.context(
+        "Could not find extracted Ghidra directory after unzip",
+    )?;
+
+    // Make analyzeHeadless executable
+    let analyze_headless_path = ghidra_dir.join("support").join("analyzeHeadless");
+    if analyze_headless_path.exists() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&analyze_headless_path)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&analyze_headless_path, perms)?;
+        }
+    }
+
+    // Clean up zip file
+    let _ = std::fs::remove_file(&zip_path);
+
+    // Set the env var so the rest of the pipeline can find it
+    std::env::set_var("GHIDRA_INSTALL_DIR", &ghidra_dir);
+
+    // Verify the installation
+    if ghidra_dir.join("support").join("analyzeHeadless").exists() {
+        log::info!(
+            "Ghidra installed successfully at: {}",
+            ghidra_dir.display()
+        );
+        Ok(ghidra_dir)
+    } else {
+        anyhow::bail!(
+            "Ghidra installation appears incomplete — analyzeHeadless not found"
+        );
+    }
 }
 
 fn find_or_create_export_script(ghidra_path: &Path) -> Result<PathBuf> {

@@ -1,39 +1,33 @@
 use anyhow::Result;
 use axum::Router;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 use tower_http::services::ServeDir;
 
-use gcrecomp_core::recompiler::pipeline::{PipelineContext, PipelineStats};
 use gcrecomp_lua::engine::LuaEngine;
 
 use crate::routes;
 use crate::security;
 
+
 pub struct AppState {
-    #[allow(dead_code)]
     pub lua_engine: Mutex<LuaEngine>,
-    pub pipeline_ctx: Mutex<Option<PipelineContext>>,
-    pub current_status: Mutex<RecompileStatus>,
+    pub status_tx: broadcast::Sender<StatusEvent>,
+    pub recompiling: AtomicBool,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct RecompileStatus {
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct StatusEvent {
     pub state: String,
     pub stage: String,
-    pub stats: Option<PipelineStats>,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-impl Default for RecompileStatus {
-    fn default() -> Self {
-        Self {
-            state: "idle".to_string(),
-            stage: "".to_string(),
-            stats: None,
-            error: None,
-        }
-    }
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_path: Option<String>,
 }
 
 pub struct WebServer {
@@ -42,19 +36,43 @@ pub struct WebServer {
 
 impl WebServer {
     pub fn new() -> Result<Self> {
-        let lua_engine = LuaEngine::new()?;
+        let engine = LuaEngine::new()?;
+
+        // Set Lua package.path so require() can find scripts
+        engine.set_package_path("lua/?.lua;lua/?/init.lua")?;
+
+        // Load web routes into a global
+        let lua = engine.lua();
+        let script = std::fs::read_to_string("lua/web/routes.lua").unwrap_or_default();
+        if !script.is_empty() {
+            let routes: mlua::Table = lua
+                .load(&script)
+                .set_name("lua/web/routes.lua")
+                .eval()
+                .map_err(|e| anyhow::anyhow!("Failed to load web routes: {}", e))?;
+            lua.globals()
+                .set("web_routes", routes)
+                .map_err(|e| anyhow::anyhow!("Failed to set web_routes global: {}", e))?;
+        }
+
+        let (status_tx, _) = broadcast::channel(64);
+
         let state = Arc::new(AppState {
-            lua_engine: Mutex::new(lua_engine),
-            pipeline_ctx: Mutex::new(None),
-            current_status: Mutex::new(RecompileStatus::default()),
+            lua_engine: Mutex::new(engine),
+            status_tx,
+            recompiling: AtomicBool::new(false),
         });
+
         Ok(Self { state })
     }
 
     pub async fn run(self) -> Result<()> {
+        // Ensure output directory exists so ServeDir doesn't 404 on startup
+        std::fs::create_dir_all("output").ok();
+
         let app = Router::new()
-            .nest("/api", routes::api_routes())
-            .fallback_service(ServeDir::new("web/static"))
+            .merge(routes::app_routes())
+            .nest_service("/output", ServeDir::new("output"))
             .with_state(self.state);
 
         let addr = security::bind_address();
