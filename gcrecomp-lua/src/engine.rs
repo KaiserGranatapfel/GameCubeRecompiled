@@ -39,6 +39,12 @@ impl LuaEngine {
         Ok(())
     }
 
+    pub fn set_package_path(&self, path: &str) -> anyhow::Result<()> {
+        let package: mlua::Table = self.lua.globals().get("package").into_anyhow()?;
+        package.set("path", path).into_anyhow()?;
+        Ok(())
+    }
+
     pub fn lua(&self) -> &Lua {
         &self.lua
     }

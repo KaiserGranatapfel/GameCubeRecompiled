@@ -18,27 +18,74 @@
             margin-bottom: 1.5rem; border: 1px solid #0f3460;
         }
         .card h2 { color: #7b68ee; margin-bottom: 1rem; font-size: 1.1rem; }
-        label { display: block; margin-bottom: 0.5rem; color: #aaa; font-size: 0.9rem; }
-        input[type="file"], select {
-            width: 100%; padding: 0.5rem; background: #0f3460;
-            border: 1px solid #533483; border-radius: 4px; color: #e0e0e0;
-            margin-bottom: 1rem;
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed #533483; border-radius: 8px; padding: 2.5rem 1rem;
+            text-align: center; cursor: pointer; transition: all 0.3s ease;
         }
-        button {
-            background: #7b68ee; color: white; border: none; padding: 0.75rem 1.5rem;
-            border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background 0.2s;
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: #7b68ee; background: rgba(123, 104, 238, 0.05);
         }
-        button:hover { background: #6c5ce7; }
-        button:disabled { background: #444; cursor: not-allowed; }
-        .status { padding: 0.75rem; border-radius: 4px; margin-top: 1rem; }
-        .status.idle { background: #1a1a2e; border: 1px solid #333; }
-        .status.running { background: #1a3a1a; border: 1px solid #2d6a2d; }
-        .status.complete { background: #1a2a3a; border: 1px solid #2d4a6a; }
-        .status.error { background: #3a1a1a; border: 1px solid #6a2d2d; }
-        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem; }
-        .stat { background: #0f3460; padding: 0.5rem; border-radius: 4px; text-align: center; }
-        .stat .value { font-size: 1.5rem; color: #7b68ee; }
-        .stat .label { font-size: 0.75rem; color: #888; }
+        .drop-zone.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+        .drop-zone svg { width: 48px; height: 48px; margin-bottom: 0.75rem; }
+        .drop-zone p { color: #aaa; }
+        .drop-zone .hint { font-size: 0.85rem; color: #666; margin-top: 0.5rem; }
+
+        /* Pipeline stages */
+        .pipeline-stages {
+            display: flex; gap: 0.25rem; margin-bottom: 1rem; overflow-x: auto;
+            padding-bottom: 0.25rem;
+        }
+        .stage {
+            flex: 1; text-align: center; padding: 0.6rem 0.25rem; border-radius: 4px;
+            font-size: 0.7rem; background: #0f3460; color: #556; transition: all 0.3s ease;
+            min-width: 72px; white-space: nowrap;
+        }
+        .stage.active {
+            background: #7b68ee; color: white; animation: pulse 1.5s ease-in-out infinite;
+        }
+        .stage.done { background: #1e5a1e; color: #8fdf8f; }
+        .stage.error { background: #5a1e1e; color: #df8f8f; }
+        .status-message {
+            font-size: 0.9rem; color: #aaa; min-height: 1.25rem;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.65; }
+        }
+
+        /* Stats grid */
+        .stats {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;
+        }
+        .stat {
+            background: #0f3460; padding: 1rem 0.5rem; border-radius: 6px;
+            text-align: center;
+        }
+        .stat .value { font-size: 1.6rem; color: #7b68ee; font-weight: 600; }
+        .stat .label { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+
+        /* Error */
+        .error-card { border-color: #6a2d2d; }
+        .error-card h2 { color: #e07070; }
+        #error-message {
+            color: #e0a0a0; font-family: monospace; font-size: 0.85rem;
+            white-space: pre-wrap; word-break: break-word;
+        }
+
+        /* Config */
+        #config-area pre {
+            background: #0f3460; padding: 1rem; border-radius: 4px;
+            overflow-x: auto; font-size: 0.85rem; color: #ccc;
+        }
+
+        @media (max-width: 640px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .pipeline-stages { flex-wrap: wrap; }
+            .stage { min-width: 0; flex: 1 1 calc(20% - 0.25rem); }
+        }
     </style>
 </head>
 <body>
@@ -47,20 +94,44 @@
         <p class="subtitle">GameCube Static Recompiler</p>
 
         <div class="card">
-            <h2>Upload DOL File</h2>
-            <label for="dol-file">Select a GameCube DOL binary or a .zip containing one:</label>
-            <input type="file" id="dol-file" accept=".dol,.zip">
-            <button id="upload-btn" onclick="uploadDol()">Upload</button>
-            <div id="upload-status"></div>
+            <h2>Recompile</h2>
+            <div id="drop-zone" class="drop-zone">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#533483" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <p>Drag &amp; drop a <strong>.dol</strong> or <strong>.zip</strong> file here</p>
+                <p class="hint">or click to browse</p>
+                <input type="file" id="file-input" accept=".dol,.zip" hidden>
+            </div>
         </div>
 
-        <div class="card">
-            <h2>Recompile</h2>
-            <button id="recompile-btn" onclick="startRecompile()" disabled>Start Recompilation</button>
-            <div id="recompile-status" class="status idle">
-                <div id="status-text">Idle</div>
-                <div id="stats" class="stats" style="display:none"></div>
+        <div id="pipeline-card" class="card" style="display:none">
+            <h2>Pipeline</h2>
+            <div class="pipeline-stages">
+                <div class="stage" data-stage="upload">Upload</div>
+                <div class="stage" data-stage="load_dol">Load DOL</div>
+                <div class="stage" data-stage="analyze">Analyze</div>
+                <div class="stage" data-stage="decode">Decode</div>
+                <div class="stage" data-stage="build_cfg">Build CFG</div>
+                <div class="stage" data-stage="data_flow">Data Flow</div>
+                <div class="stage" data-stage="type_inference">Type Infer</div>
+                <div class="stage" data-stage="codegen">Code Gen</div>
+                <div class="stage" data-stage="validate">Validate</div>
+                <div class="stage" data-stage="write_output">Write Out</div>
             </div>
+            <div id="status-message" class="status-message"></div>
+        </div>
+
+        <div id="stats-card" class="card" style="display:none">
+            <h2>Results</h2>
+            <div id="stats" class="stats"></div>
+        </div>
+
+        <div id="error-card" class="card error-card" style="display:none">
+            <h2>Error</h2>
+            <div id="error-message"></div>
         </div>
 
         <div class="card">
@@ -70,68 +141,160 @@
     </div>
 
     <script>
-        let pollInterval = null;
+        const STAGES = [
+            'upload', 'load_dol', 'analyze', 'decode', 'build_cfg',
+            'data_flow', 'type_inference', 'codegen', 'validate', 'write_output'
+        ];
 
-        async function uploadDol() {
-            const input = document.getElementById('dol-file');
-            if (!input.files.length) return;
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        let eventSource = null;
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) {
+                handleFile(fileInput.files[0]);
+                fileInput.value = '';
+            }
+        });
+
+        async function handleFile(file) {
+            const name = file.name.toLowerCase();
+            if (!name.endsWith('.dol') && !name.endsWith('.zip')) {
+                showError('Please select a .dol or .zip file');
+                return;
+            }
+
+            // Reset UI
+            document.getElementById('pipeline-card').style.display = '';
+            document.getElementById('stats-card').style.display = 'none';
+            document.getElementById('error-card').style.display = 'none';
+            resetStages();
+            dropZone.classList.add('disabled');
+
+            // Connect SSE first
+            if (eventSource) eventSource.close();
+            eventSource = new EventSource('/api/status');
+            eventSource.onmessage = handleSSE;
+            eventSource.onerror = () => {};
+
+            // Upload file
             const form = new FormData();
-            form.append('file', input.files[0]);
-            const btn = document.getElementById('upload-btn');
-            btn.disabled = true;
+            form.append('file', file);
+
             try {
                 const res = await fetch('/api/upload', { method: 'POST', body: form });
-                const data = await res.json();
-                if (res.ok) {
-                    document.getElementById('upload-status').textContent = 'Uploaded (' + data.size + ' bytes)';
-                    document.getElementById('recompile-btn').disabled = false;
-                } else {
-                    document.getElementById('upload-status').textContent = 'Error: ' + (data.detail || res.statusText);
+                if (!res.ok) {
+                    const text = await res.text();
+                    showError(text);
+                    dropZone.classList.remove('disabled');
+                    if (eventSource) { eventSource.close(); eventSource = null; }
                 }
             } catch (e) {
-                document.getElementById('upload-status').textContent = 'Error: ' + e.message;
+                showError(e.message);
+                dropZone.classList.remove('disabled');
+                if (eventSource) { eventSource.close(); eventSource = null; }
             }
-            btn.disabled = false;
         }
 
-        async function startRecompile() {
-            document.getElementById('recompile-btn').disabled = true;
-            await fetch('/api/recompile', { method: 'POST' });
-            pollInterval = setInterval(pollStatus, 1000);
+        function handleSSE(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.state === 'running') {
+                setStageActive(data.stage);
+                document.getElementById('status-message').textContent = data.message;
+            } else if (data.state === 'complete') {
+                completeAllStages();
+                document.getElementById('status-message').textContent = 'Recompilation complete';
+                showStats(data.stats);
+                cleanup();
+            } else if (data.state === 'error') {
+                markStageError(data.stage);
+                document.getElementById('status-message').textContent = '';
+                showError(data.error || data.message);
+                cleanup();
+            }
         }
 
-        async function pollStatus() {
-            const res = await fetch('/api/status');
-            const data = await res.json();
-            const el = document.getElementById('recompile-status');
-            el.className = 'status ' + data.state;
-            let text = data.state.charAt(0).toUpperCase() + data.state.slice(1);
-            if (data.stage) text += ' - ' + data.stage;
-            if (data.error) text += ': ' + data.error;
-            document.getElementById('status-text').textContent = text;
+        function cleanup() {
+            if (eventSource) { eventSource.close(); eventSource = null; }
+            dropZone.classList.remove('disabled');
+        }
 
-            if (data.stats) {
-                const statsEl = document.getElementById('stats');
-                statsEl.style.display = 'grid';
-                statsEl.innerHTML =
-                    '<div class="stat"><div class="value">' + data.stats.total_functions + '</div><div class="label">Total Functions</div></div>' +
-                    '<div class="stat"><div class="value">' + data.stats.successful_functions + '</div><div class="label">Successful</div></div>' +
-                    '<div class="stat"><div class="value">' + data.stats.failed_functions + '</div><div class="label">Failed</div></div>' +
-                    '<div class="stat"><div class="value">' + data.stats.total_instructions + '</div><div class="label">Instructions</div></div>';
-            }
+        function resetStages() {
+            STAGES.forEach(s => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (el) el.className = 'stage';
+            });
+            document.getElementById('status-message').textContent = '';
+        }
 
-            if (data.state === 'complete' || data.state === 'error') {
-                clearInterval(pollInterval);
-                document.getElementById('recompile-btn').disabled = false;
-            }
+        function setStageActive(stage) {
+            const idx = STAGES.indexOf(stage);
+            if (idx === -1) return;
+            STAGES.forEach((s, i) => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (!el) return;
+                if (i < idx) el.className = 'stage done';
+                else if (i === idx) el.className = 'stage active';
+                else el.className = 'stage';
+            });
+        }
+
+        function completeAllStages() {
+            STAGES.forEach(s => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (el) el.className = 'stage done';
+            });
+        }
+
+        function markStageError(stage) {
+            const idx = STAGES.indexOf(stage);
+            STAGES.forEach((s, i) => {
+                const el = document.querySelector('[data-stage="' + s + '"]');
+                if (!el) return;
+                if (idx >= 0 && i < idx) el.className = 'stage done';
+                else if (idx >= 0 && i === idx) el.className = 'stage error';
+            });
+        }
+
+        function showStats(stats) {
+            if (!stats) return;
+            document.getElementById('stats-card').style.display = '';
+            document.getElementById('stats').innerHTML =
+                '<div class="stat"><div class="value">' + (stats.total_functions || 0) + '</div><div class="label">Total Functions</div></div>' +
+                '<div class="stat"><div class="value">' + (stats.successful_functions || 0) + '</div><div class="label">Successful</div></div>' +
+                '<div class="stat"><div class="value">' + (stats.failed_functions || 0) + '</div><div class="label">Failed</div></div>' +
+                '<div class="stat"><div class="value">' + (stats.total_instructions || 0) + '</div><div class="label">Instructions</div></div>';
+        }
+
+        function showError(message) {
+            document.getElementById('error-card').style.display = '';
+            document.getElementById('error-message').textContent = message;
         }
 
         async function loadConfig() {
             try {
                 const res = await fetch('/api/config');
                 const config = await res.json();
-                const area = document.getElementById('config-area');
-                area.innerHTML = '<pre>' + JSON.stringify(config, null, 2) + '</pre>';
+                document.getElementById('config-area').innerHTML =
+                    '<pre>' + JSON.stringify(config, null, 2) + '</pre>';
             } catch (e) {
                 document.getElementById('config-area').textContent = 'Failed to load config';
             }
