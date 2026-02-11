@@ -24,3 +24,4 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = "0.11"
+zip = { workspace = true }

@@ -69,3 +69,6 @@ axum = { version = "0.7", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["fs", "cors"] }
 
+# Archive handling
+zip = "2.2"
+

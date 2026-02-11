@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use gcrecomp_core::recompiler::pipeline::{PipelineContext, RecompilationPipeline};
+use std::io::Read;
 use std::sync::Arc;
 
 use crate::security;
@@ -37,6 +38,8 @@ async fn upload_dol(
         ));
     };
 
+    let file_name = field.file_name().unwrap_or("").to_string();
+
     let data = field
         .bytes()
         .await
@@ -48,6 +51,13 @@ async fn upload_dol(
             "File too large".to_string(),
         ));
     }
+
+    // If the uploaded file is a zip, extract the first .dol from it
+    let data = if file_name.ends_with(".zip") {
+        extract_dol_from_zip(&data)?
+    } else {
+        data.to_vec()
+    };
 
     if !security::validate_dol_magic(&data) {
         return Err((
@@ -207,4 +217,42 @@ async fn list_targets() -> Json<serde_json::Value> {
             {"id": "aarch64-macos", "name": "AArch64 macOS"},
         ]
     }))
+}
+
+/// Extract the first .dol file found inside a zip archive.
+fn extract_dol_from_zip(
+    zip_data: &[u8],
+) -> Result<Vec<u8>, (axum::http::StatusCode, String)> {
+    let cursor = std::io::Cursor::new(zip_data);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("Invalid zip file: {e}")))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("Zip read error: {e}")))?;
+
+        let name = file.name().to_lowercase();
+        if name.ends_with(".dol") {
+            if file.size() > security::MAX_UPLOAD_SIZE as u64 {
+                return Err((
+                    axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+                    "DOL file inside zip is too large".to_string(),
+                ));
+            }
+            let mut buf = Vec::with_capacity(file.size() as usize);
+            file.read_to_end(&mut buf).map_err(|e| {
+                (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    format!("Failed to extract DOL from zip: {e}"),
+                )
+            })?;
+            return Ok(buf);
+        }
+    }
+
+    Err((
+        axum::http::StatusCode::BAD_REQUEST,
+        "No .dol file found inside the zip archive".to_string(),
+    ))
 }
