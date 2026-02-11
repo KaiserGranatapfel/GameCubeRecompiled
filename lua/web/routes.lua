@@ -6,12 +6,13 @@ local routes = {}
 function routes.handle_recompile(params)
     local dol_path = params.dol_path or "uploads/uploaded.dol"
     local output_path = params.output_path or "output/recompiled.rs"
+    local target = params.target or "x86_64-linux"
 
     gcrecomp.web.update_status("load_dol", "Loading DOL file...")
     local ctx = gcrecomp.pipeline.new_context()
     ctx:load_dol(dol_path)
 
-    gcrecomp.web.update_status("analyze", "Analyzing binary...")
+    gcrecomp.web.update_status("analyze", "Analyzing binary for " .. target .. "...")
     ctx:analyze()
 
     gcrecomp.web.update_status("decode", "Decoding instructions...")
@@ -26,7 +27,7 @@ function routes.handle_recompile(params)
     gcrecomp.web.update_status("type_inference", "Inferring types...")
     ctx:infer_types()
 
-    gcrecomp.web.update_status("codegen", "Generating code...")
+    gcrecomp.web.update_status("codegen", "Generating code for " .. target .. "...")
     ctx:generate_code()
 
     gcrecomp.web.update_status("validate", "Validating output...")

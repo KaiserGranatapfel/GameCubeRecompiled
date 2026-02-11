@@ -31,43 +31,78 @@ async fn upload_dol(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let field = multipart
-        .next_field()
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    // Parse all multipart fields by name
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut file_name = String::new();
+    let mut game_title = "game".to_string();
+    let mut target = "x86_64-linux".to_string();
 
-    let Some(field) = field else {
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                file_name = field.file_name().unwrap_or("").to_string();
+                let bytes = field.bytes().await.map_err(|e| {
+                    (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        format!("Failed to read uploaded file: {}", e),
+                    )
+                })?;
+                file_data = Some(bytes.to_vec());
+            }
+            "game_title" => {
+                let text = field.text().await.unwrap_or_default();
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    game_title = trimmed.to_string();
+                }
+            }
+            "target" => {
+                let text = field.text().await.unwrap_or_default();
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    target = trimmed.to_string();
+                }
+            }
+            _ => {
+                // Skip unknown fields
+            }
+        }
+    }
+
+    let Some(data) = file_data else {
         return Err((
             axum::http::StatusCode::BAD_REQUEST,
-            "No file provided".to_string(),
+            "No file provided. Please select a .dol or .zip file.".to_string(),
         ));
     };
 
-    let file_name = field.file_name().unwrap_or("").to_string();
-
-    let data = field
-        .bytes()
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    if data.is_empty() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "Uploaded file is empty.".to_string(),
+        ));
+    }
 
     if data.len() > security::MAX_UPLOAD_SIZE {
         return Err((
             axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-            "File too large".to_string(),
+            "File too large (max 64 MB).".to_string(),
         ));
     }
 
     // If the uploaded file is a zip, extract the first .dol from it
-    let data = if file_name.ends_with(".zip") {
+    let data = if file_name.to_lowercase().ends_with(".zip") {
         extract_dol_from_zip(&data)?
     } else {
-        data.to_vec()
+        data
     };
 
     if !security::validate_dol_magic(&data) {
         return Err((
             axum::http::StatusCode::BAD_REQUEST,
-            "Invalid DOL file".to_string(),
+            "Invalid DOL file. The file does not appear to be a valid GameCube DOL binary."
+                .to_string(),
         ));
     }
 
@@ -87,7 +122,7 @@ async fn upload_dol(
     {
         return Err((
             axum::http::StatusCode::CONFLICT,
-            "Recompile already in progress".to_string(),
+            "A recompilation is already in progress. Please wait for it to finish.".to_string(),
         ));
     }
 
@@ -98,24 +133,25 @@ async fn upload_dol(
         message: "File uploaded, starting recompilation...".into(),
         stats: None,
         error: None,
+        binary_path: None,
     });
 
-    // Spawn recompile task
-    let status_tx = state.status_tx.clone();
-    let state_clone = state.clone();
-    tokio::task::spawn(async move {
-        let result = tokio::task::spawn_blocking(move || run_lua_recompile(status_tx)).await;
+    let size = data.len();
 
-        match result {
-            Ok(Ok(stats)) => {
-                let _ = state_clone.status_tx.send(StatusEvent {
-                    state: "complete".into(),
-                    stage: "done".into(),
-                    message: "Recompilation complete".into(),
-                    stats: Some(stats),
-                    error: None,
-                });
-            }
+    // Spawn recompile + compile task
+    let status_tx_lua = state.status_tx.clone();
+    let status_tx_compile = state.status_tx.clone();
+    let state_clone = state.clone();
+    let target_for_compile = target.clone();
+    let game_title_for_compile = game_title.clone();
+
+    tokio::task::spawn(async move {
+        // Phase 1: Lua recompilation pipeline
+        let lua_result =
+            tokio::task::spawn_blocking(move || run_lua_recompile(status_tx_lua, &target)).await;
+
+        let stats = match lua_result {
+            Ok(Ok(stats)) => stats,
             Ok(Err(e)) => {
                 let _ = state_clone.status_tx.send(StatusEvent {
                     state: "error".into(),
@@ -123,7 +159,10 @@ async fn upload_dol(
                     message: e.to_string(),
                     stats: None,
                     error: Some(e.to_string()),
+                    binary_path: None,
                 });
+                state_clone.recompiling.store(false, Ordering::SeqCst);
+                return;
             }
             Err(e) => {
                 let _ = state_clone.status_tx.send(StatusEvent {
@@ -132,6 +171,57 @@ async fn upload_dol(
                     message: format!("Task panicked: {}", e),
                     stats: None,
                     error: Some(format!("Internal error: {}", e)),
+                    binary_path: None,
+                });
+                state_clone.recompiling.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+
+        // Phase 2: Compile game executable
+        let _ = status_tx_compile.send(StatusEvent {
+            state: "running".into(),
+            stage: "compile".into(),
+            message: "Compiling game executable...".into(),
+            stats: None,
+            error: None,
+            binary_path: None,
+        });
+
+        let target = target_for_compile;
+        let game_title = game_title_for_compile;
+        let compile_result =
+            tokio::task::spawn_blocking(move || compile_game(&game_title, &target)).await;
+
+        match compile_result {
+            Ok(Ok(binary_path)) => {
+                let _ = state_clone.status_tx.send(StatusEvent {
+                    state: "complete".into(),
+                    stage: "done".into(),
+                    message: format!("Build complete: {}", binary_path),
+                    stats: Some(stats),
+                    error: None,
+                    binary_path: Some(binary_path),
+                });
+            }
+            Ok(Err(e)) => {
+                let _ = state_clone.status_tx.send(StatusEvent {
+                    state: "error".into(),
+                    stage: "compile".into(),
+                    message: format!("Compilation failed: {}", e),
+                    stats: Some(stats),
+                    error: Some(e.to_string()),
+                    binary_path: None,
+                });
+            }
+            Err(e) => {
+                let _ = state_clone.status_tx.send(StatusEvent {
+                    state: "error".into(),
+                    stage: "compile".into(),
+                    message: format!("Compile task panicked: {}", e),
+                    stats: Some(stats),
+                    error: Some(format!("Internal error: {}", e)),
+                    binary_path: None,
                 });
             }
         }
@@ -139,7 +229,6 @@ async fn upload_dol(
         state_clone.recompiling.store(false, Ordering::SeqCst);
     });
 
-    let size = data.len();
     Ok(Json(serde_json::json!({
         "status": "started",
         "size": size,
@@ -148,6 +237,7 @@ async fn upload_dol(
 
 fn run_lua_recompile(
     status_tx: tokio::sync::broadcast::Sender<StatusEvent>,
+    target: &str,
 ) -> anyhow::Result<serde_json::Value> {
     let engine = LuaEngine::new()?;
     engine.set_package_path("lua/?.lua;lua/?/init.lua")?;
@@ -172,6 +262,7 @@ fn run_lua_recompile(
                 message,
                 stats: None,
                 error: None,
+                binary_path: None,
             });
             Ok(())
         })
@@ -202,6 +293,9 @@ fn run_lua_recompile(
     params
         .set("output_path", "output/recompiled.rs")
         .map_err(|e| anyhow::anyhow!("Failed to set output_path: {}", e))?;
+    params
+        .set("target", target)
+        .map_err(|e| anyhow::anyhow!("Failed to set target: {}", e))?;
 
     // Call handle_recompile
     let handle_fn: mlua::Function = routes
@@ -216,6 +310,88 @@ fn run_lua_recompile(
         .map_err(|e| anyhow::anyhow!("Failed to convert stats: {}", e))?;
 
     Ok(stats_json)
+}
+
+/// Compile the game crate and produce a named executable.
+fn compile_game(game_title: &str, target: &str) -> anyhow::Result<String> {
+    // Copy recompiled code into game crate
+    std::fs::create_dir_all("output")?;
+    if Path::new("output/recompiled.rs").exists() {
+        std::fs::copy("output/recompiled.rs", "game/src/recompiled.rs")?;
+    }
+
+    // Determine the Rust target triple
+    let target_triple = match target {
+        "x86_64-linux" => "x86_64-unknown-linux-gnu",
+        "x86_64-windows" => "x86_64-pc-windows-gnu",
+        "aarch64-linux" => "aarch64-unknown-linux-gnu",
+        "aarch64-macos" => "aarch64-apple-darwin",
+        _ => "x86_64-unknown-linux-gnu",
+    };
+
+    // Build the game crate
+    let output = std::process::Command::new("cargo")
+        .args([
+            "build",
+            "--release",
+            "-p",
+            "game",
+            "--target",
+            target_triple,
+        ])
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to invoke cargo: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Extract the most useful part of the error
+        let short_err = stderr
+            .lines()
+            .filter(|l| l.contains("error") || l.contains("Error"))
+            .take(10)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let msg = if short_err.is_empty() {
+            stderr.to_string()
+        } else {
+            short_err
+        };
+        return Err(anyhow::anyhow!("Compilation failed:\n{}", msg));
+    }
+
+    // Determine binary extension and source path
+    let ext = if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
+    let src_binary = format!("target/{}/release/game{}", target_triple, ext);
+
+    // Sanitize game title for use as filename
+    let safe_title: String = game_title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let dst_name = format!("{}{}", safe_title, ext);
+    let dst_path = format!("output/{}", dst_name);
+
+    std::fs::copy(&src_binary, &dst_path).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to copy binary from {} to {}: {}",
+            src_binary,
+            dst_path,
+            e
+        )
+    })?;
+
+    log::info!("Game binary written to {}", dst_path);
+    Ok(dst_name)
 }
 
 async fn sse_status(
@@ -313,7 +489,7 @@ fn extract_dol_from_zip(zip_data: &[u8]) -> Result<Vec<u8>, (axum::http::StatusC
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| {
         (
             axum::http::StatusCode::BAD_REQUEST,
-            format!("Invalid zip file: {e}"),
+            format!("Invalid zip file: {}", e),
         )
     })?;
 
@@ -321,7 +497,7 @@ fn extract_dol_from_zip(zip_data: &[u8]) -> Result<Vec<u8>, (axum::http::StatusC
         let mut file = archive.by_index(i).map_err(|e| {
             (
                 axum::http::StatusCode::BAD_REQUEST,
-                format!("Zip read error: {e}"),
+                format!("Zip read error: {}", e),
             )
         })?;
 
@@ -330,14 +506,14 @@ fn extract_dol_from_zip(zip_data: &[u8]) -> Result<Vec<u8>, (axum::http::StatusC
             if file.size() > security::MAX_UPLOAD_SIZE as u64 {
                 return Err((
                     axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-                    "DOL file inside zip is too large".to_string(),
+                    "DOL file inside zip is too large.".to_string(),
                 ));
             }
             let mut buf = Vec::with_capacity(file.size() as usize);
             file.read_to_end(&mut buf).map_err(|e| {
                 (
                     axum::http::StatusCode::BAD_REQUEST,
-                    format!("Failed to extract DOL from zip: {e}"),
+                    format!("Failed to extract DOL from zip: {}", e),
                 )
             })?;
             return Ok(buf);
@@ -346,6 +522,6 @@ fn extract_dol_from_zip(zip_data: &[u8]) -> Result<Vec<u8>, (axum::http::StatusC
 
     Err((
         axum::http::StatusCode::BAD_REQUEST,
-        "No .dol file found inside the zip archive".to_string(),
+        "No .dol file found inside the zip archive.".to_string(),
     ))
 }

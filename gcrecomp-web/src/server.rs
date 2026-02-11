@@ -26,6 +26,8 @@ pub struct StatusEvent {
     pub stats: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_path: Option<String>,
 }
 
 pub struct WebServer {
@@ -65,8 +67,12 @@ impl WebServer {
     }
 
     pub async fn run(self) -> Result<()> {
+        // Ensure output directory exists so ServeDir doesn't 404 on startup
+        std::fs::create_dir_all("output").ok();
+
         let app = Router::new()
             .nest("/api", routes::api_routes())
+            .nest_service("/output", ServeDir::new("output"))
             .layer(DefaultBodyLimit::max(security::MAX_UPLOAD_SIZE))
             .fallback_service(ServeDir::new("web/static"))
             .with_state(self.state);

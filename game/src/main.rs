@@ -1,4 +1,7 @@
 // Game entry point — full game runtime
+#[allow(dead_code)]
+mod recompiled;
+
 use anyhow::Result;
 use gcrecomp_core::runtime::context::CpuContext;
 use gcrecomp_core::runtime::memory::MemoryManager;
