@@ -1,10 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GCRecomp Dashboard</title>
-    <style>
+-- HTML templates for GCRecomp web dashboard
+-- All UI markup lives here; Rust is just HTTP transport.
+
+local templates = {}
+
+function templates.css()
+    return [[
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -127,95 +127,95 @@
             .stage { min-width: 0; flex: 1 1 calc(20% - 3px); }
             .form-row { flex-direction: column; }
         }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>GCRecomp Dashboard</h1>
-        <p class="subtitle">GameCube Static Recompiler</p>
+    ]]
+end
 
-        <div class="card">
-            <h2>Recompile</h2>
+function templates.upload_card(targets)
+    local btns = {}
+    for i, t in ipairs(targets) do
+        -- Parse display name: "x86_64 Linux" -> os="Linux", arch="x86_64"
+        local arch, os_name = t.name:match("^(%S+)%s+(.+)$")
+        if not arch then
+            os_name = t.name
+            arch = ""
+        end
+        local sel = (i == 1) and ' selected' or ''
+        btns[#btns + 1] = '<div class="target-btn' .. sel .. '" data-target="'
+            .. t.id .. '" onclick="selectTarget(this)">'
+            .. '<span class="os-name">' .. os_name .. '</span>'
+            .. '<span class="os-arch">' .. arch .. '</span></div>'
+    end
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="game-title">Game Title</label>
-                    <input type="text" id="game-title" placeholder="e.g. MyGame" value="game">
-                </div>
-                <div class="form-group target-group">
-                    <label>Target Platform</label>
-                    <div class="target-options">
-                        <div class="target-btn selected" data-target="x86_64-linux" onclick="selectTarget(this)">
-                            <span class="os-name">Linux</span>
-                            <span class="os-arch">x86_64</span>
-                        </div>
-                        <div class="target-btn" data-target="x86_64-windows" onclick="selectTarget(this)">
-                            <span class="os-name">Windows</span>
-                            <span class="os-arch">x86_64</span>
-                        </div>
-                        <div class="target-btn" data-target="aarch64-macos" onclick="selectTarget(this)">
-                            <span class="os-name">macOS</span>
-                            <span class="os-arch">AArch64</span>
-                        </div>
-                        <div class="target-btn" data-target="aarch64-linux" onclick="selectTarget(this)">
-                            <span class="os-name">Linux</span>
-                            <span class="os-arch">AArch64</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    return '<div class="card"><h2>Recompile</h2>'
+        .. '<div class="form-row">'
+        .. '<div class="form-group">'
+        .. '<label for="game-title">Game Title</label>'
+        .. '<input type="text" id="game-title" placeholder="e.g. MyGame" value="game">'
+        .. '</div>'
+        .. '<div class="form-group target-group">'
+        .. '<label>Target Platform</label>'
+        .. '<div class="target-options">' .. table.concat(btns) .. '</div>'
+        .. '</div></div>'
+        .. '<div id="drop-zone" class="drop-zone">'
+        .. '<svg viewBox="0 0 24 24" fill="none" stroke="#533483" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+        .. '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'
+        .. '<polyline points="17 8 12 3 7 8"/>'
+        .. '<line x1="12" y1="3" x2="12" y2="15"/>'
+        .. '</svg>'
+        .. '<p>Drag &amp; drop a <strong>.dol</strong>, <strong>.rvz</strong>, <strong>.iso</strong>, <strong>.gcm</strong>, or <strong>.zip</strong> file here</p>'
+        .. '<p class="hint">or click to browse</p>'
+        .. '<div id="file-badge" class="file-badge" style="display:none"></div>'
+        .. '<input type="file" id="file-input" accept=".dol,.zip,.iso,.gcm,.rvz" hidden>'
+        .. '</div></div>'
+end
 
-            <div id="drop-zone" class="drop-zone">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#533483" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="17 8 12 3 7 8"/>
-                    <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                <p>Drag &amp; drop a <strong>.dol</strong> or <strong>.zip</strong> file here</p>
-                <p class="hint">or click to browse</p>
-                <div id="file-badge" class="file-badge" style="display:none"></div>
-                <input type="file" id="file-input" accept=".dol,.zip" hidden>
-            </div>
-        </div>
+function templates.pipeline_card()
+    local stages = {
+        { id = "upload",         label = "Upload" },
+        { id = "load_dol",      label = "Load DOL" },
+        { id = "analyze",       label = "Analyze" },
+        { id = "decode",        label = "Decode" },
+        { id = "build_cfg",     label = "Build CFG" },
+        { id = "data_flow",     label = "Data Flow" },
+        { id = "type_inference", label = "Type Infer" },
+        { id = "codegen",       label = "Code Gen" },
+        { id = "validate",      label = "Validate" },
+        { id = "write_output",  label = "Write Out" },
+        { id = "compile",       label = "Compile" },
+    }
+    local parts = {}
+    for _, s in ipairs(stages) do
+        parts[#parts + 1] = '<div class="stage" data-stage="' .. s.id .. '">' .. s.label .. '</div>'
+    end
+    return '<div id="pipeline-card" class="card" style="display:none">'
+        .. '<h2>Pipeline</h2>'
+        .. '<div class="pipeline-stages">' .. table.concat(parts) .. '</div>'
+        .. '<div id="status-message" class="status-message"></div>'
+        .. '</div>'
+end
 
-        <div id="pipeline-card" class="card" style="display:none">
-            <h2>Pipeline</h2>
-            <div class="pipeline-stages">
-                <div class="stage" data-stage="upload">Upload</div>
-                <div class="stage" data-stage="load_dol">Load DOL</div>
-                <div class="stage" data-stage="analyze">Analyze</div>
-                <div class="stage" data-stage="decode">Decode</div>
-                <div class="stage" data-stage="build_cfg">Build CFG</div>
-                <div class="stage" data-stage="data_flow">Data Flow</div>
-                <div class="stage" data-stage="type_inference">Type Infer</div>
-                <div class="stage" data-stage="codegen">Code Gen</div>
-                <div class="stage" data-stage="validate">Validate</div>
-                <div class="stage" data-stage="write_output">Write Out</div>
-                <div class="stage" data-stage="compile">Compile</div>
-            </div>
-            <div id="status-message" class="status-message"></div>
-        </div>
+function templates.stats_card()
+    return '<div id="stats-card" class="card" style="display:none">'
+        .. '<h2>Results</h2>'
+        .. '<div id="stats" class="stats"></div>'
+        .. '<div id="download-row" class="download-row" style="display:none">'
+        .. '<a id="download-link" class="download-btn" href="#" download>Download</a>'
+        .. '</div></div>'
+end
 
-        <div id="stats-card" class="card" style="display:none">
-            <h2>Results</h2>
-            <div id="stats" class="stats"></div>
-            <div id="download-row" class="download-row" style="display:none">
-                <a id="download-link" class="download-btn" href="#" download>Download</a>
-            </div>
-        </div>
+function templates.error_card()
+    return '<div id="error-card" class="card error-card" style="display:none">'
+        .. '<h2>Error</h2>'
+        .. '<div id="error-message"></div></div>'
+end
 
-        <div id="error-card" class="card error-card" style="display:none">
-            <h2>Error</h2>
-            <div id="error-message"></div>
-        </div>
+function templates.config_card()
+    return '<div class="card"><h2>Configuration</h2>'
+        .. '<div id="config-area">Loading...</div></div>'
+end
 
-        <div class="card">
-            <h2>Configuration</h2>
-            <div id="config-area">Loading...</div>
-        </div>
-    </div>
-
-    <script>
+function templates.javascript()
+    return [[
         const STAGES = [
             'upload', 'load_dol', 'analyze', 'decode', 'build_cfg',
             'data_flow', 'type_inference', 'codegen', 'validate', 'write_output', 'compile'
@@ -260,8 +260,9 @@
         /* --- Main upload flow --- */
         async function handleFile(file) {
             const name = file.name.toLowerCase();
-            if (!name.endsWith('.dol') && !name.endsWith('.zip')) {
-                showError('Invalid file type. Please select a .dol or .zip file.');
+            const validExts = ['.dol', '.zip', '.iso', '.gcm', '.rvz'];
+            if (!validExts.some(ext => name.endsWith(ext))) {
+                showError('Invalid file type. Accepted: .dol, .zip, .iso, .gcm, .rvz');
                 return;
             }
 
@@ -277,16 +278,19 @@
             fileBadge.textContent = file.name;
             fileBadge.style.display = 'inline-block';
 
-            // Build form data with all fields
+            // Send raw file body with metadata in headers
             const gameTitle = document.getElementById('game-title').value.trim() || 'game';
-            const form = new FormData();
-            form.append('game_title', gameTitle);
-            form.append('target', selectedTarget);
-            form.append('file', file);
 
-            // Upload first, then connect SSE
             try {
-                const res = await fetch('/api/upload', { method: 'POST', body: form });
+                const res = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: file,
+                    headers: {
+                        'X-File-Name': file.name,
+                        'X-Game-Title': gameTitle,
+                        'X-Target': selectedTarget,
+                    }
+                });
                 if (!res.ok) {
                     let errText;
                     try { errText = await res.text(); } catch (_) { errText = res.statusText; }
@@ -295,7 +299,7 @@
                     return;
                 }
 
-                // Upload succeeded — now connect SSE for live updates
+                // Upload succeeded -- connect SSE for live updates
                 connectSSE();
 
             } catch (e) {
@@ -309,9 +313,7 @@
             if (eventSource) eventSource.close();
             eventSource = new EventSource('/api/status');
             eventSource.onmessage = handleSSE;
-            eventSource.onerror = () => {
-                // Connection lost — don't show error, SSE auto-reconnects
-            };
+            eventSource.onerror = () => {};
         }
 
         function handleSSE(event) {
@@ -423,6 +425,27 @@
         }
 
         loadConfig();
-    </script>
-</body>
-</html>
+    ]]
+end
+
+function templates.index(targets)
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
+        .. '<meta charset="UTF-8">\n'
+        .. '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+        .. '<title>GCRecomp Dashboard</title>\n'
+        .. '<style>' .. templates.css() .. '</style>\n'
+        .. '</head>\n<body>\n'
+        .. '<div class="container">\n'
+        .. '<h1>GCRecomp Dashboard</h1>\n'
+        .. '<p class="subtitle">GameCube Static Recompiler</p>\n'
+        .. templates.upload_card(targets)
+        .. templates.pipeline_card()
+        .. templates.stats_card()
+        .. templates.error_card()
+        .. templates.config_card()
+        .. '</div>\n'
+        .. '<script>' .. templates.javascript() .. '</script>\n'
+        .. '</body>\n</html>'
+end
+
+return templates

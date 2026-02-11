@@ -21,6 +21,7 @@ serde_json = { workspace = true }
 smallvec = { workspace = true }
 bitvec = { workspace = true }
 which = "5.0"
+zstd = { workspace = true }
 
 [dev-dependencies]
 

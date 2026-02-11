@@ -1,5 +1,4 @@
 use anyhow::Result;
-use axum::extract::DefaultBodyLimit;
 use axum::Router;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,6 +9,7 @@ use gcrecomp_lua::engine::LuaEngine;
 
 use crate::routes;
 use crate::security;
+
 
 pub struct AppState {
     pub lua_engine: Mutex<LuaEngine>,
@@ -71,10 +71,8 @@ impl WebServer {
         std::fs::create_dir_all("output").ok();
 
         let app = Router::new()
-            .nest("/api", routes::api_routes())
+            .merge(routes::app_routes())
             .nest_service("/output", ServeDir::new("output"))
-            .layer(DefaultBodyLimit::max(security::MAX_UPLOAD_SIZE))
-            .fallback_service(ServeDir::new("web/static"))
             .with_state(self.state);
 
         let addr = security::bind_address();

@@ -19,3 +19,4 @@ env_logger = "0.11"
 anyhow = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
+zstd = { workspace = true }

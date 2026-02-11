@@ -1,12 +1,14 @@
 pub mod callbacks;
 pub mod config;
 pub mod cpu;
+pub mod disc_fs;
 pub mod memory;
 pub mod optimize;
 pub mod pipeline;
 pub mod runtime;
 pub mod ui;
 pub mod verify;
+pub mod web;
 
 use mlua::Lua;
 
@@ -23,6 +25,7 @@ pub fn register_all(lua: &Lua) -> anyhow::Result<()> {
     verify::register(lua, &gcrecomp)?;
     optimize::register(lua, &gcrecomp)?;
     runtime::register(lua, &gcrecomp)?;
+    web::register(lua, &gcrecomp)?;
 
     lua.globals().set("gcrecomp", gcrecomp).into_anyhow()?;
     Ok(())

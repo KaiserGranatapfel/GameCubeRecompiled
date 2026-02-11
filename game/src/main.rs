@@ -1,5 +1,7 @@
 // Game entry point — full game runtime
 #[allow(dead_code)]
+mod assets;
+#[allow(dead_code)]
 mod recompiled;
 
 use anyhow::Result;
@@ -31,6 +33,9 @@ impl GameApp {
 
         // Run SDK init sequence
         gcrecomp_core::runtime::sdk::os::os_init(&mut os_state, &mut memory);
+
+        // Initialize DVD virtual filesystem from embedded assets
+        os_state.init_dvd(assets::ARCHIVE);
 
         // Setup initial CPU context
         ctx.set_register(1, 0x817F_FF00); // r1 = stack pointer (top of MEM1)

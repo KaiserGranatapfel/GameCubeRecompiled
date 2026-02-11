@@ -72,3 +72,6 @@ tower-http = { version = "0.5", features = ["fs", "cors"] }
 # Archive handling
 zip = "2.2"
 
+# Compression
+zstd = "0.13"
+

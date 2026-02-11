@@ -1,5 +1,6 @@
 use log::{info, warn};
 
+use super::dvd::VirtualFilesystem;
 use super::heap::ArenaAllocator;
 use super::interrupt::InterruptSystem;
 use super::timer::OsTimer;
@@ -13,6 +14,7 @@ pub struct OsState {
     pub interrupts: InterruptSystem,
     pub console_type: u32,
     pub initialized: bool,
+    pub dvd: Option<VirtualFilesystem>,
 }
 
 impl OsState {
@@ -23,6 +25,24 @@ impl OsState {
             interrupts: InterruptSystem::new(),
             console_type: 0x10000006, // Retail GameCube (HW2)
             initialized: false,
+            dvd: None,
+        }
+    }
+
+    /// Initialize the virtual DVD filesystem from an embedded GCFS archive.
+    pub fn init_dvd(&mut self, archive: &'static [u8]) {
+        if archive.is_empty() {
+            info!("No disc assets embedded; DVD filesystem disabled.");
+            return;
+        }
+        match VirtualFilesystem::new(archive) {
+            Ok(vfs) => {
+                info!("DVD filesystem initialized from embedded archive.");
+                self.dvd = Some(vfs);
+            }
+            Err(e) => {
+                warn!("Failed to initialize DVD filesystem: {}", e);
+            }
         }
     }
 }
@@ -194,6 +214,76 @@ pub fn dispatch_sdk_call(
             ctx.set_register(4, time as u32);
             true
         }
+
+        // DVD API
+        "DVDInit" => {
+            info!("DVDInit called (no-op; VFS initialized at startup)");
+            true
+        }
+        "DVDOpen" => {
+            // r3 = DVDFileInfo*, r4 = path pointer
+            let file_info_addr = ctx.get_register(3);
+            let path_addr = ctx.get_register(4);
+            let path = read_c_string(memory, path_addr);
+
+            let result = if let Some(dvd) = os.dvd.as_mut() {
+                let handle = dvd.dvd_open(&path);
+                if handle != 0 {
+                    let length = dvd.dvd_get_length(handle);
+                    // Write length to DVDFileInfo+0x08, handle to DVDFileInfo+0x0C
+                    let _ = memory.write_u32(file_info_addr + 0x08, length);
+                    let _ = memory.write_u32(file_info_addr + 0x0C, handle);
+                    1u32 // success (TRUE)
+                } else {
+                    0u32 // failure (FALSE)
+                }
+            } else {
+                warn!("DVDOpen('{}') called but no DVD filesystem loaded", path);
+                0u32
+            };
+            ctx.set_register(3, result);
+            true
+        }
+        "DVDClose" => {
+            // r3 = DVDFileInfo*
+            let file_info_addr = ctx.get_register(3);
+            let handle = memory.read_u32(file_info_addr + 0x0C).unwrap_or(0);
+            if let Some(dvd) = os.dvd.as_mut() {
+                dvd.dvd_close(handle);
+            }
+            true
+        }
+        "DVDRead" | "DVDReadPrio" => {
+            // r3 = DVDFileInfo*, r4 = buffer addr, r5 = length, r6 = offset
+            let file_info_addr = ctx.get_register(3);
+            let buf_addr = ctx.get_register(4);
+            let length = ctx.get_register(5);
+            let offset = ctx.get_register(6);
+            let handle = memory.read_u32(file_info_addr + 0x0C).unwrap_or(0);
+
+            let bytes_read = if let Some(dvd) = os.dvd.as_mut() {
+                match dvd.dvd_read(handle, memory, buf_addr, length, offset) {
+                    Ok(n) => n as i32,
+                    Err(e) => {
+                        warn!("DVDRead failed: {}", e);
+                        -1i32
+                    }
+                }
+            } else {
+                warn!("DVDRead called but no DVD filesystem loaded");
+                -1i32
+            };
+            ctx.set_register(3, bytes_read as u32);
+            true
+        }
+        "DVDGetLength" => {
+            // r3 = DVDFileInfo*
+            let file_info_addr = ctx.get_register(3);
+            let length = memory.read_u32(file_info_addr + 0x08).unwrap_or(0);
+            ctx.set_register(3, length);
+            true
+        }
+
         _ => false,
     }
 }

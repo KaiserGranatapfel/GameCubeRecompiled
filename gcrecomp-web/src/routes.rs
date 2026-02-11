@@ -1,12 +1,15 @@
 use axum::{
-    extract::{Multipart, State},
-    response::sse::{Event, KeepAlive, Sse},
+    body::Bytes,
+    extract::{DefaultBodyLimit, State},
+    http::StatusCode,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Html,
+    },
     routing::{get, post, put},
     Json, Router,
 };
 use std::convert::Infallible;
-use std::io::Read;
-use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio_stream::wrappers::BroadcastStream;
@@ -18,240 +21,270 @@ use gcrecomp_lua::engine::LuaEngine;
 use crate::security;
 use crate::server::{AppState, StatusEvent};
 
-pub fn api_routes() -> Router<Arc<AppState>> {
+/// All application routes (no nesting required).
+pub fn app_routes() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/upload", post(upload_dol))
-        .route("/status", get(sse_status))
-        .route("/config", get(get_config))
-        .route("/config", put(update_config))
-        .route("/targets", get(list_targets))
+        .route("/", get(handle_index))
+        .route(
+            "/api/upload",
+            post(handle_upload).layer(DefaultBodyLimit::disable()),
+        )
+        .route("/api/status", get(sse_status))
+        .route("/api/config", get(handle_config_get))
+        .route("/api/config", put(handle_config_set))
+        .route("/api/targets", get(handle_targets))
 }
 
-async fn upload_dol(
+// ---------------------------------------------------------------------------
+// GET / — Lua renders the full HTML page
+// ---------------------------------------------------------------------------
+
+async fn handle_index(
     State(state): State<Arc<AppState>>,
-    mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    // Parse all multipart fields by name
-    let mut file_data: Option<Vec<u8>> = None;
-    let mut file_name = String::new();
-    let mut game_title = "game".to_string();
-    let mut target = "x86_64-linux".to_string();
+) -> Result<Html<String>, (StatusCode, String)> {
+    let engine = state.lua_engine.lock().await;
+    let lua = engine.lua();
 
-    while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field.name().unwrap_or("").to_string();
-        match name.as_str() {
-            "file" => {
-                file_name = field.file_name().unwrap_or("").to_string();
-                let bytes = field.bytes().await.map_err(|e| {
-                    (
-                        axum::http::StatusCode::BAD_REQUEST,
-                        format!("Failed to read uploaded file: {}", e),
-                    )
-                })?;
-                file_data = Some(bytes.to_vec());
-            }
-            "game_title" => {
-                let text = field.text().await.unwrap_or_default();
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    game_title = trimmed.to_string();
-                }
-            }
-            "target" => {
-                let text = field.text().await.unwrap_or_default();
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    target = trimmed.to_string();
-                }
-            }
-            _ => {
-                // Skip unknown fields
-            }
-        }
-    }
+    let web_routes: mlua::Table = lua.globals().get("web_routes").map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Routes not loaded: {}", e),
+        )
+    })?;
+    let handle_fn: mlua::Function = web_routes
+        .get("handle_index")
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let result: mlua::Table = handle_fn
+        .call(())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let Some(data) = file_data else {
+    let body: String = result
+        .get("body")
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Html(body))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/upload — body limit disabled, manual 5 GB check
+// ---------------------------------------------------------------------------
+
+async fn handle_upload(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Manual size enforcement (DefaultBodyLimit is disabled on this route)
+    if body.len() > security::MAX_UPLOAD_SIZE {
         return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            "No file provided. Please select a .dol or .zip file.".to_string(),
-        ));
-    };
-
-    if data.is_empty() {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            "Uploaded file is empty.".to_string(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "File too large (max 5 GB).".to_string(),
         ));
     }
 
-    if data.len() > security::MAX_UPLOAD_SIZE {
-        return Err((
-            axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-            "File too large (max 64 MB).".to_string(),
-        ));
-    }
-
-    // If the uploaded file is a zip, extract the first .dol from it
-    let data = if file_name.to_lowercase().ends_with(".zip") {
-        extract_dol_from_zip(&data)?
-    } else {
-        data
-    };
-
-    if !security::validate_dol_magic(&data) {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            "Invalid DOL file. The file does not appear to be a valid GameCube DOL binary."
-                .to_string(),
-        ));
-    }
-
-    // Save to disk
-    let upload_dir = Path::new("uploads");
-    std::fs::create_dir_all(upload_dir)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let dol_path = upload_dir.join("uploaded.dol");
-    std::fs::write(&dol_path, &data)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Check recompile lock
+    // Check recompile lock early
     if state
         .recompiling
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return Err((
-            axum::http::StatusCode::CONFLICT,
+            StatusCode::CONFLICT,
             "A recompilation is already in progress. Please wait for it to finish.".to_string(),
         ));
     }
 
-    // Broadcast initial status
-    let _ = state.status_tx.send(StatusEvent {
-        state: "running".into(),
-        stage: "upload".into(),
-        message: "File uploaded, starting recompilation...".into(),
-        stats: None,
-        error: None,
-        binary_path: None,
-    });
+    // Build params table and call Lua
+    let lua_result = {
+        let engine = state.lua_engine.lock().await;
+        let lua = engine.lua();
 
-    let size = data.len();
+        let web_routes: mlua::Table = lua.globals().get("web_routes").map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Routes not loaded: {}", e),
+            )
+        })?;
+        let handle_fn: mlua::Function = web_routes.get("handle_upload").map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
-    // Spawn recompile + compile task
-    let status_tx_lua = state.status_tx.clone();
-    let status_tx_compile = state.status_tx.clone();
-    let state_clone = state.clone();
-    let target_for_compile = target.clone();
-    let game_title_for_compile = game_title.clone();
+        let params = lua.create_table().map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
-    tokio::task::spawn(async move {
-        // Phase 1: Lua recompilation pipeline
-        let lua_result =
-            tokio::task::spawn_blocking(move || run_lua_recompile(status_tx_lua, &target)).await;
+        let file_name = headers
+            .get("x-file-name")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let game_title = headers
+            .get("x-game-title")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("game");
+        let target = headers
+            .get("x-target")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("x86_64-linux");
 
-        let stats = match lua_result {
-            Ok(Ok(stats)) => stats,
-            Ok(Err(e)) => {
-                let _ = state_clone.status_tx.send(StatusEvent {
-                    state: "error".into(),
-                    stage: "".into(),
-                    message: e.to_string(),
-                    stats: None,
-                    error: Some(e.to_string()),
-                    binary_path: None,
-                });
-                state_clone.recompiling.store(false, Ordering::SeqCst);
-                return;
-            }
-            Err(e) => {
-                let _ = state_clone.status_tx.send(StatusEvent {
-                    state: "error".into(),
-                    stage: "".into(),
-                    message: format!("Task panicked: {}", e),
-                    stats: None,
-                    error: Some(format!("Internal error: {}", e)),
-                    binary_path: None,
-                });
-                state_clone.recompiling.store(false, Ordering::SeqCst);
-                return;
-            }
+        let set = |k: &str, v: mlua::Value| -> Result<(), (StatusCode, String)> {
+            params.set(k, v).map_err(|e| {
+                state.recompiling.store(false, Ordering::SeqCst);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })
         };
 
-        // Phase 2: Compile game executable
-        let _ = status_tx_compile.send(StatusEvent {
+        set("file_name", mlua::Value::String(lua.create_string(file_name).map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?))?;
+        set("game_title", mlua::Value::String(lua.create_string(game_title).map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?))?;
+        set("target", mlua::Value::String(lua.create_string(target).map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?))?;
+        // Pass raw body as Lua binary string
+        set("body", mlua::Value::String(lua.create_string(body.as_ref()).map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?))?;
+        set("body_len", mlua::Value::Integer(body.len() as i64))?;
+
+        let result: mlua::Table = handle_fn.call(params).map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
+
+        // Read status code from Lua result
+        let status: i64 = result.get("status").unwrap_or(200);
+        if status != 200 {
+            let body_str: String = result.get("body").unwrap_or_default();
+            state.recompiling.store(false, Ordering::SeqCst);
+            let code = match status {
+                400 => StatusCode::BAD_REQUEST,
+                413 => StatusCode::PAYLOAD_TOO_LARGE,
+                409 => StatusCode::CONFLICT,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            return Err((code, body_str));
+        }
+
+        // Extract pipeline control fields
+        let start_pipeline: bool = result.get("_start_pipeline").unwrap_or(false);
+        let game_title: String = result.get("_game_title").unwrap_or_default();
+        let target: String = result.get("_target").unwrap_or_default();
+
+        // Extract response body (table)
+        let body_val: mlua::Value = result.get("body").map_err(|e| {
+            state.recompiling.store(false, Ordering::SeqCst);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
+        let response_json = match body_val {
+            mlua::Value::Table(t) => lua_table_to_json(&t).map_err(|e| {
+                state.recompiling.store(false, Ordering::SeqCst);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?,
+            _ => serde_json::json!({}),
+        };
+
+        Ok::<_, (StatusCode, String)>((response_json, start_pipeline, game_title, target))
+    }?;
+
+    let (response_json, start_pipeline, game_title, target) = lua_result;
+
+    if start_pipeline {
+        // Broadcast initial status
+        let _ = state.status_tx.send(StatusEvent {
             state: "running".into(),
-            stage: "compile".into(),
-            message: "Compiling game executable...".into(),
+            stage: "upload".into(),
+            message: "File uploaded, starting recompilation...".into(),
             stats: None,
             error: None,
             binary_path: None,
         });
 
-        let target = target_for_compile;
-        let game_title = game_title_for_compile;
-        let compile_result =
-            tokio::task::spawn_blocking(move || compile_game(&game_title, &target)).await;
+        let state_clone = state.clone();
+        tokio::task::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                run_lua_pipeline(state_clone.status_tx.clone(), &target, &game_title)
+            })
+            .await;
 
-        match compile_result {
-            Ok(Ok(binary_path)) => {
-                let _ = state_clone.status_tx.send(StatusEvent {
-                    state: "complete".into(),
-                    stage: "done".into(),
-                    message: format!("Build complete: {}", binary_path),
-                    stats: Some(stats),
-                    error: None,
-                    binary_path: Some(binary_path),
-                });
+            match result {
+                Ok(Ok(stats)) => {
+                    let binary_path = stats
+                        .get("binary_path")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    let _ = state.status_tx.send(StatusEvent {
+                        state: "complete".into(),
+                        stage: "done".into(),
+                        message: binary_path
+                            .as_ref()
+                            .map(|p| format!("Build complete: {}", p))
+                            .unwrap_or_else(|| "Build complete".into()),
+                        stats: Some(stats),
+                        error: None,
+                        binary_path,
+                    });
+                }
+                Ok(Err(e)) => {
+                    let _ = state.status_tx.send(StatusEvent {
+                        state: "error".into(),
+                        stage: "".into(),
+                        message: e.to_string(),
+                        stats: None,
+                        error: Some(e.to_string()),
+                        binary_path: None,
+                    });
+                }
+                Err(e) => {
+                    let _ = state.status_tx.send(StatusEvent {
+                        state: "error".into(),
+                        stage: "".into(),
+                        message: format!("Task panicked: {}", e),
+                        stats: None,
+                        error: Some(format!("Internal error: {}", e)),
+                        binary_path: None,
+                    });
+                }
             }
-            Ok(Err(e)) => {
-                let _ = state_clone.status_tx.send(StatusEvent {
-                    state: "error".into(),
-                    stage: "compile".into(),
-                    message: format!("Compilation failed: {}", e),
-                    stats: Some(stats),
-                    error: Some(e.to_string()),
-                    binary_path: None,
-                });
-            }
-            Err(e) => {
-                let _ = state_clone.status_tx.send(StatusEvent {
-                    state: "error".into(),
-                    stage: "compile".into(),
-                    message: format!("Compile task panicked: {}", e),
-                    stats: Some(stats),
-                    error: Some(format!("Internal error: {}", e)),
-                    binary_path: None,
-                });
-            }
-        }
 
-        state_clone.recompiling.store(false, Ordering::SeqCst);
-    });
+            state.recompiling.store(false, Ordering::SeqCst);
+        });
+    } else {
+        state.recompiling.store(false, Ordering::SeqCst);
+    }
 
-    Ok(Json(serde_json::json!({
-        "status": "started",
-        "size": size,
-    })))
+    Ok(Json(response_json))
 }
 
-fn run_lua_recompile(
+// ---------------------------------------------------------------------------
+// Pipeline — fresh LuaEngine, calls routes.handle_recompile()
+// ---------------------------------------------------------------------------
+
+fn run_lua_pipeline(
     status_tx: tokio::sync::broadcast::Sender<StatusEvent>,
     target: &str,
+    game_title: &str,
 ) -> anyhow::Result<serde_json::Value> {
     let engine = LuaEngine::new()?;
     engine.set_package_path("lua/?.lua;lua/?/init.lua")?;
 
     let lua = engine.lua();
 
-    // Inject gcrecomp.web.update_status
+    // Override gcrecomp.web.update_status with a broadcasting version
     let gcrecomp: mlua::Table = lua
         .globals()
         .get("gcrecomp")
         .map_err(|e| anyhow::anyhow!("Failed to get gcrecomp global: {}", e))?;
-    let web_table = lua
-        .create_table()
-        .map_err(|e| anyhow::anyhow!("Failed to create web table: {}", e))?;
+    let web_table: mlua::Table = gcrecomp
+        .get("web")
+        .map_err(|e| anyhow::anyhow!("Failed to get web table: {}", e))?;
 
     let tx = status_tx;
     let update_fn = lua
@@ -271,9 +304,6 @@ fn run_lua_recompile(
     web_table
         .set("update_status", update_fn)
         .map_err(|e| anyhow::anyhow!("Failed to set update_status: {}", e))?;
-    gcrecomp
-        .set("web", web_table)
-        .map_err(|e| anyhow::anyhow!("Failed to set web table: {}", e))?;
 
     // Load routes
     let script = std::fs::read_to_string("lua/web/routes.lua")?;
@@ -296,6 +326,9 @@ fn run_lua_recompile(
     params
         .set("target", target)
         .map_err(|e| anyhow::anyhow!("Failed to set target: {}", e))?;
+    params
+        .set("game_title", game_title)
+        .map_err(|e| anyhow::anyhow!("Failed to set game_title: {}", e))?;
 
     // Call handle_recompile
     let handle_fn: mlua::Function = routes
@@ -305,94 +338,15 @@ fn run_lua_recompile(
         .call(params)
         .map_err(|e| anyhow::anyhow!("Recompilation failed: {}", e))?;
 
-    // Convert result to JSON
     let stats_json = lua_table_to_json(&result)
         .map_err(|e| anyhow::anyhow!("Failed to convert stats: {}", e))?;
 
     Ok(stats_json)
 }
 
-/// Compile the game crate and produce a named executable.
-fn compile_game(game_title: &str, target: &str) -> anyhow::Result<String> {
-    // Copy recompiled code into game crate
-    std::fs::create_dir_all("output")?;
-    if Path::new("output/recompiled.rs").exists() {
-        std::fs::copy("output/recompiled.rs", "game/src/recompiled.rs")?;
-    }
-
-    // Determine the Rust target triple
-    let target_triple = match target {
-        "x86_64-linux" => "x86_64-unknown-linux-gnu",
-        "x86_64-windows" => "x86_64-pc-windows-gnu",
-        "aarch64-linux" => "aarch64-unknown-linux-gnu",
-        "aarch64-macos" => "aarch64-apple-darwin",
-        _ => "x86_64-unknown-linux-gnu",
-    };
-
-    // Build the game crate
-    let output = std::process::Command::new("cargo")
-        .args([
-            "build",
-            "--release",
-            "-p",
-            "game",
-            "--target",
-            target_triple,
-        ])
-        .output()
-        .map_err(|e| anyhow::anyhow!("Failed to invoke cargo: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Extract the most useful part of the error
-        let short_err = stderr
-            .lines()
-            .filter(|l| l.contains("error") || l.contains("Error"))
-            .take(10)
-            .collect::<Vec<_>>()
-            .join("\n");
-        let msg = if short_err.is_empty() {
-            stderr.to_string()
-        } else {
-            short_err
-        };
-        return Err(anyhow::anyhow!("Compilation failed:\n{}", msg));
-    }
-
-    // Determine binary extension and source path
-    let ext = if target.contains("windows") {
-        ".exe"
-    } else {
-        ""
-    };
-    let src_binary = format!("target/{}/release/game{}", target_triple, ext);
-
-    // Sanitize game title for use as filename
-    let safe_title: String = game_title
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let dst_name = format!("{}{}", safe_title, ext);
-    let dst_path = format!("output/{}", dst_name);
-
-    std::fs::copy(&src_binary, &dst_path).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to copy binary from {} to {}: {}",
-            src_binary,
-            dst_path,
-            e
-        )
-    })?;
-
-    log::info!("Game binary written to {}", dst_path);
-    Ok(dst_name)
-}
+// ---------------------------------------------------------------------------
+// GET /api/status — SSE stream (stays in Rust, async requirement)
+// ---------------------------------------------------------------------------
 
 async fn sse_status(
     State(state): State<Arc<AppState>>,
@@ -407,121 +361,60 @@ async fn sse_status(
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-async fn get_config(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+// ---------------------------------------------------------------------------
+// Generic Lua handler helper for simple request/response routes
+// ---------------------------------------------------------------------------
+
+async fn call_lua_handler(
+    state: &AppState,
+    method: &str,
+    arg: Option<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let engine = state.lua_engine.lock().await;
     let lua = engine.lua();
 
     let web_routes: mlua::Table = lua.globals().get("web_routes").map_err(|e| {
         (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             format!("Routes not loaded: {}", e),
         )
     })?;
     let handle_fn: mlua::Function = web_routes
-        .get("handle_config_get")
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let result: mlua::Table = handle_fn
-        .call(())
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .get(method)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let result: mlua::Table = if let Some(val) = arg {
+        let lua_val =
+            json_to_lua_value(lua, &val).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        handle_fn
+            .call(lua_val)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else {
+        handle_fn
+            .call(())
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    };
 
     let json = lua_table_to_json(&result)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json))
 }
 
-async fn update_config(
+async fn handle_config_get(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    call_lua_handler(&state, "handle_config_get", None).await
+}
+
+async fn handle_config_set(
     State(state): State<Arc<AppState>>,
     Json(value): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let engine = state.lua_engine.lock().await;
-    let lua = engine.lua();
-
-    let web_routes: mlua::Table = lua.globals().get("web_routes").map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Routes not loaded: {}", e),
-        )
-    })?;
-    let handle_fn: mlua::Function = web_routes
-        .get("handle_config_set")
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let lua_value = json_to_lua_value(lua, &value)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let result: mlua::Table = handle_fn
-        .call(lua_value)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let json = lua_table_to_json(&result)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json))
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    call_lua_handler(&state, "handle_config_set", Some(value)).await
 }
 
-async fn list_targets(
+async fn handle_targets(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let engine = state.lua_engine.lock().await;
-    let lua = engine.lua();
-
-    let web_routes: mlua::Table = lua.globals().get("web_routes").map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Routes not loaded: {}", e),
-        )
-    })?;
-    let handle_fn: mlua::Function = web_routes
-        .get("handle_list_targets")
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let result: mlua::Table = handle_fn
-        .call(())
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let json = lua_table_to_json(&result)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json))
-}
-
-/// Extract the first .dol file found inside a zip archive.
-fn extract_dol_from_zip(zip_data: &[u8]) -> Result<Vec<u8>, (axum::http::StatusCode, String)> {
-    let cursor = std::io::Cursor::new(zip_data);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            format!("Invalid zip file: {}", e),
-        )
-    })?;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                format!("Zip read error: {}", e),
-            )
-        })?;
-
-        let name = file.name().to_lowercase();
-        if name.ends_with(".dol") {
-            if file.size() > security::MAX_UPLOAD_SIZE as u64 {
-                return Err((
-                    axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-                    "DOL file inside zip is too large.".to_string(),
-                ));
-            }
-            let mut buf = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut buf).map_err(|e| {
-                (
-                    axum::http::StatusCode::BAD_REQUEST,
-                    format!("Failed to extract DOL from zip: {}", e),
-                )
-            })?;
-            return Ok(buf);
-        }
-    }
-
-    Err((
-        axum::http::StatusCode::BAD_REQUEST,
-        "No .dol file found inside the zip archive.".to_string(),
-    ))
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    call_lua_handler(&state, "handle_list_targets", None).await
 }
