@@ -302,13 +302,56 @@ impl RecompilationPipeline {
         rust_code.push_str("    }\n");
         rust_code.push_str("}\n\n");
 
+        // Memory image loader: the DOL's text+data sections are serialized to a
+        // sidecar `game_image.bin` and embedded, so the game can load real data
+        // into RAM before running recompiled code (otherwise every read is 0).
+        rust_code.push_str("/// Embedded initial memory image (DOL sections).\n");
+        rust_code
+            .push_str("pub static GAME_IMAGE: &[u8] = include_bytes!(\"game_image.bin\");\n\n");
+        rust_code.push_str("/// Load the DOL's sections into RAM at their virtual addresses.\n");
+        rust_code.push_str("pub fn load_image(memory: &mut MemoryManager) {\n");
+        rust_code.push_str("    let img = GAME_IMAGE;\n");
+        rust_code.push_str("    let mut p = 0usize;\n");
+        rust_code.push_str("    while p + 8 <= img.len() {\n");
+        rust_code.push_str(
+            "        let addr = u32::from_le_bytes([img[p], img[p + 1], img[p + 2], img[p + 3]]);\n",
+        );
+        rust_code.push_str("        let len = u32::from_le_bytes([img[p + 4], img[p + 5], img[p + 6], img[p + 7]]) as usize;\n");
+        rust_code.push_str("        p += 8;\n");
+        rust_code.push_str("        if p + len > img.len() { break; }\n");
+        rust_code.push_str("        let _ = memory.load_section(addr, &img[p..p + len]);\n");
+        rust_code.push_str("        p += len;\n");
+        rust_code.push_str("    }\n");
+        rust_code.push_str("}\n");
+
         // Step 7: Validation
         log::info!("Step 7: Validating generated code...");
         CodeValidator::validate_rust_code(&rust_code)?;
 
-        // Step 8: Write output
+        // Step 8: Write output + the embedded memory image next to it.
         log::info!("Step 8: Writing output to {}...", output_path);
         std::fs::write(output_path, rust_code)?;
+
+        let mut image: Vec<u8> = Vec::new();
+        for sec in dol_file
+            .text_sections
+            .iter()
+            .chain(dol_file.data_sections.iter())
+        {
+            if sec.data.is_empty() {
+                continue;
+            }
+            image.extend_from_slice(&sec.address.to_le_bytes());
+            image.extend_from_slice(&(sec.data.len() as u32).to_le_bytes());
+            image.extend_from_slice(&sec.data);
+        }
+        let img_path = std::path::Path::new(output_path).with_file_name("game_image.bin");
+        std::fs::write(&img_path, &image)?;
+        log::info!(
+            "Wrote memory image: {} ({} bytes)",
+            img_path.display(),
+            image.len()
+        );
 
         log::info!("Recompilation complete!");
         Ok(())

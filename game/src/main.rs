@@ -221,6 +221,9 @@ fn run_recompiled_entry() {
     let mut ctx = CpuContext::new();
 
     gcrecomp_core::runtime::sdk::os::os_init(&mut os_state, &mut memory);
+    // Load the DOL's text+data sections into RAM so the recompiled code reads
+    // real data instead of zeros.
+    recompiled::load_image(&mut memory);
     ctx.set_register(1, 0x817F_FF00); // r1 = stack pointer (top of MEM1)
     ctx.set_register(2, 0x8040_0000); // SDA2 base
     ctx.set_register(13, 0x8040_0000); // SDA base

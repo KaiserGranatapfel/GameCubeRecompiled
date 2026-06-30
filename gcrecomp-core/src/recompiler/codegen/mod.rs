@@ -5,7 +5,7 @@ pub mod register;
 use crate::recompiler::analysis::FunctionMetadata;
 use crate::recompiler::decoder::{DecodedInstruction, InstructionType, Operand};
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub struct CodeGenerator {
     indent_level: usize,
@@ -93,102 +93,210 @@ impl CodeGenerator {
         Ok(sig)
     }
 
+    /// Generate a function body as a basic-block state machine:
+    /// `let mut __blk = 0; loop { match __blk { 0 => {...}, ... } }`.
+    /// Branches set `__blk` to the target block (intra-function) so loops and
+    /// conditionals actually execute, instead of returning at the first branch.
+    /// An iteration guard bounds runaway loops so a recompiled spin-wait can't hang
+    /// the host. We intentionally skip dead-code elimination here — it would drop
+    /// instructions and break the address→block mapping.
     fn generate_function_body(&mut self, instructions: &[DecodedInstruction]) -> Result<String> {
-        // Use control flow analysis to generate better code
-        let cfg = crate::recompiler::analysis::control_flow::ControlFlowAnalyzer::build_cfg(
-            instructions,
-            0,
-        )
-        .unwrap_or_else(|_| {
-            // Fallback to basic block construction
-            crate::recompiler::analysis::control_flow::ControlFlowGraph {
-                nodes: vec![],
-                edges: vec![],
-                entry_block: 0,
-            }
-        });
+        if instructions.is_empty() {
+            return Ok(format!("{}Ok(Some(ctx.get_register(3)))\n", self.indent()));
+        }
 
-        // Use data flow analysis for optimizations
-        let _def_use_chains =
-            crate::recompiler::analysis::data_flow::DataFlowAnalyzer::build_def_use_chains(
-                instructions,
-            );
-        let live_analysis = if !cfg.nodes.is_empty() {
-            Some(
-                crate::recompiler::analysis::data_flow::DataFlowAnalyzer::live_variable_analysis(
-                    &cfg,
-                ),
-            )
-        } else {
-            None
-        };
+        let func_start = instructions[0].address;
+        let func_end = instructions.last().unwrap().address.wrapping_add(4);
 
-        // Optimize instructions using data flow analysis
-        let optimized_instructions = if let Some(ref live) = live_analysis {
-            crate::recompiler::analysis::data_flow::DataFlowAnalyzer::eliminate_dead_code(
-                instructions,
-                live,
-            )
-        } else {
-            instructions.to_vec()
-        };
-
-        self.generate_function_body_impl(&optimized_instructions)
-    }
-
-    fn generate_function_body_impl(
-        &mut self,
-        instructions: &[DecodedInstruction],
-    ) -> Result<String> {
-        let mut code = String::new();
-
-        // ctx and memory are parameters; r1 (stack pointer) lives in ctx, so there's
-        // no Rust-level stack frame to set up. ponytail: dropped the no-op
-        // save/restore of r1 and its comments (~4 lines x every function).
-
-        // Build control flow graph for better code generation
-        // Clone instructions into basic blocks to avoid borrow issues
-        let mut basic_blocks: Vec<Vec<DecodedInstruction>> = Vec::new();
-        let mut current_block: Vec<DecodedInstruction> = Vec::new();
-
+        // 1. Leaders: function entry, branch targets (intra), and post-branch addresses.
+        let mut leaders: BTreeSet<u32> = BTreeSet::new();
+        leaders.insert(func_start);
         for inst in instructions {
-            current_block.push(inst.clone());
-
-            // If this is a branch, end the block
-            if matches!(inst.instruction.instruction_type, InstructionType::Branch) {
-                basic_blocks.push(current_block);
-                current_block = Vec::new();
+            if !matches!(inst.instruction.instruction_type, InstructionType::Branch) {
+                continue;
             }
-        }
-
-        // Add remaining instructions as final block
-        if !current_block.is_empty() {
-            basic_blocks.push(current_block);
-        }
-
-        // Generate code for each basic block
-        for block in basic_blocks.iter() {
-            for instruction in block.iter() {
-                match self.generate_instruction(instruction) {
-                    Ok(inst_code) => code.push_str(&inst_code),
-                    Err(_) => {
-                        // One line per untranslatable instruction. ponytail: the old
-                        // ~9-line diagnostic block was ~1M lines across the game.
-                        code.push_str(&self.indent());
-                        code.push_str(&format!(
-                            "// untranslated 0x{:08X} (opcode 0x{:02X})\n",
-                            instruction.raw, instruction.instruction.opcode
-                        ));
-                    }
+            let after = inst.address.wrapping_add(4);
+            if (func_start..func_end).contains(&after) {
+                leaders.insert(after);
+            }
+            if let Some(t) = Self::branch_target(inst) {
+                if (func_start..func_end).contains(&t) {
+                    leaders.insert(t);
                 }
             }
         }
+        let leader_vec: Vec<u32> = leaders.iter().copied().collect();
+        let block_of: HashMap<u32, usize> = leader_vec
+            .iter()
+            .enumerate()
+            .map(|(i, &a)| (a, i))
+            .collect();
+        let n = leader_vec.len();
 
-        // Fall-through return: PowerPC calling convention puts the return value in r3.
-        code.push_str(&self.indent());
-        code.push_str("Ok(Some(ctx.get_register(3)))\n");
+        // 2. Partition instructions into blocks (largest leader <= address).
+        let mut blocks: Vec<Vec<&DecodedInstruction>> = vec![Vec::new(); n];
+        for inst in instructions {
+            let bi = leader_vec
+                .partition_point(|&l| l <= inst.address)
+                .saturating_sub(1);
+            blocks[bi].push(inst);
+        }
 
+        // 3. Emit the state machine.
+        let ind = self.indent();
+        let mut code = String::new();
+        code.push_str(&format!("{ind}let mut __blk: u32 = 0;\n"));
+        code.push_str(&format!("{ind}let mut __steps: u64 = 0;\n"));
+        code.push_str(&format!("{ind}loop {{\n"));
+        code.push_str(&format!(
+            "{ind}__steps += 1; if __steps > 50_000_000 {{ return Ok(Some(ctx.get_register(3))); }}\n"
+        ));
+        code.push_str(&format!("{ind}match __blk {{\n"));
+
+        for (bi, block) in blocks.iter().enumerate() {
+            code.push_str(&format!("{ind}{bi}u32 => {{\n"));
+            let last = block.len().saturating_sub(1);
+            let mut terminated = false;
+            for (i, inst) in block.iter().enumerate() {
+                let is_branch =
+                    matches!(inst.instruction.instruction_type, InstructionType::Branch);
+                if i == last && is_branch {
+                    code.push_str(&self.emit_terminator(inst, bi, n, &block_of));
+                    terminated = true;
+                } else {
+                    match self.generate_instruction(inst) {
+                        Ok(c) => code.push_str(&c),
+                        Err(_) => {
+                            code.push_str(&format!("{ind}// untranslated 0x{:08X}\n", inst.raw))
+                        }
+                    }
+                }
+            }
+            if !terminated {
+                if bi + 1 < n {
+                    code.push_str(&format!("{ind}__blk = {}u32;\n", bi + 1));
+                } else {
+                    code.push_str(&format!("{ind}return Ok(Some(ctx.get_register(3)));\n"));
+                }
+            }
+            code.push_str(&format!("{ind}}}\n"));
+        }
+        code.push_str(&format!(
+            "{ind}_ => return Ok(Some(ctx.get_register(3))),\n"
+        ));
+        code.push_str(&format!("{ind}}}\n")); // match
+        code.push_str(&format!("{ind}}}\n")); // loop
         Ok(code)
+    }
+
+    /// Static intra-function branch target (relative `b`/`bc` only). `None` for
+    /// absolute branches and register branches (blr/bctr).
+    fn branch_target(inst: &DecodedInstruction) -> Option<u32> {
+        let raw = inst.raw;
+        if (raw >> 1) & 1 != 0 {
+            return None; // absolute (AA=1)
+        }
+        match raw >> 26 {
+            18 => {
+                let disp = ((raw & 0x03FF_FFFC) as i32) << 6 >> 6; // sign-extend 26-bit
+                Some(inst.address.wrapping_add(disp as u32))
+            }
+            16 => {
+                let disp = ((raw & 0x0000_FFFC) as i32) << 16 >> 16; // sign-extend 16-bit
+                Some(inst.address.wrapping_add(disp as u32))
+            }
+            _ => None,
+        }
+    }
+
+    /// Emit the block terminator: set `__blk` to the next/target block, call+continue
+    /// (bl), or return. `cur` is the current block index, `n` the block count.
+    fn emit_terminator(
+        &mut self,
+        inst: &DecodedInstruction,
+        cur: usize,
+        n: usize,
+        block_of: &HashMap<u32, usize>,
+    ) -> String {
+        let ind = self.indent();
+        let raw = inst.raw;
+        let primary = raw >> 26;
+        let next = if cur + 1 < n {
+            format!("__blk = {}u32;", cur + 1)
+        } else {
+            "return Ok(Some(ctx.get_register(3)));".to_string()
+        };
+        let ret = "return Ok(Some(ctx.get_register(3)));".to_string();
+        let call = |tgt: u32| {
+            format!(
+                "ctx.lr = 0x{:08X}u32; if let Ok(Some(rv)) = call_function_by_address(0x{:08X}u32, ctx, memory) {{ ctx.set_register(3, rv); }}",
+                inst.address.wrapping_add(4),
+                tgt
+            )
+        };
+
+        match primary {
+            18 => {
+                let aa = (raw >> 1) & 1;
+                let lk = raw & 1;
+                let disp = ((raw & 0x03FF_FFFC) as i32) << 6 >> 6;
+                let target = if aa != 0 {
+                    disp as u32
+                } else {
+                    inst.address.wrapping_add(disp as u32)
+                };
+                if lk != 0 {
+                    self.function_calls.push(target);
+                    format!("{ind}{} {next}\n", call(target))
+                } else if let Some(&tb) = block_of.get(&target) {
+                    format!("{ind}__blk = {tb}u32;\n") // intra-function jump
+                } else {
+                    // Tail call out of the function, then return.
+                    format!("{ind}{} {ret}\n", call(target))
+                }
+            }
+            16 => {
+                let aa = (raw >> 1) & 1;
+                let bo = (raw >> 21) & 0x1F;
+                let bi = (raw >> 16) & 0x1F;
+                let disp = ((raw & 0x0000_FFFC) as i32) << 16 >> 16;
+                let target = inst.address.wrapping_add(disp as u32);
+
+                // Optional CTR decrement + test (bdnz/bdz).
+                let mut pre = String::new();
+                let ctr_ok = if bo & 0x04 == 0 {
+                    pre = format!("{ind}ctx.ctr = ctx.ctr.wrapping_sub(1);\n");
+                    if bo & 0x02 != 0 {
+                        "ctx.ctr == 0"
+                    } else {
+                        "ctx.ctr != 0"
+                    }
+                } else {
+                    "true"
+                };
+                // Optional CR test. CR fields are MSB-first (LT=bit3, GT=2, EQ=1, SO=0).
+                let cr_ok = if bo & 0x10 != 0 {
+                    "true".to_string()
+                } else {
+                    format!(
+                        "((ctx.get_cr_field({}) >> {}) & 1 != 0) == {}",
+                        bi / 4,
+                        3 - (bi % 4),
+                        bo & 0x08 != 0
+                    )
+                };
+                let taken = if aa == 0 {
+                    match block_of.get(&target) {
+                        Some(&tb) => format!("__blk = {tb}u32;"),
+                        None => ret.clone(),
+                    }
+                } else {
+                    ret.clone()
+                };
+                format!("{pre}{ind}if ({ctr_ok}) && ({cr_ok}) {{ {taken} }} else {{ {next} }}\n")
+            }
+            _ => format!("{ind}{ret}\n"), // blr / bctr / bclr
+        }
     }
 
     fn _build_basic_blocks<'a>(
