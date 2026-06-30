@@ -151,10 +151,7 @@ impl VirtualFilesystem {
             Some(normalized.to_string())
         } else {
             let lower = normalized.to_lowercase();
-            self.toc
-                .keys()
-                .find(|k| k.to_lowercase() == lower)
-                .cloned()
+            self.toc.keys().find(|k| k.to_lowercase() == lower).cloned()
         };
 
         match found {
@@ -163,13 +160,8 @@ impl VirtualFilesystem {
                 let length = entry.decompressed_size as u32;
                 let handle = self.next_handle;
                 self.next_handle += 1;
-                self.open_files.insert(
-                    handle,
-                    OpenFile {
-                        path: key,
-                        length,
-                    },
-                );
+                self.open_files
+                    .insert(handle, OpenFile { path: key, length });
                 log::debug!("DVDOpen('{}') -> handle {}", path, handle);
                 handle
             }
@@ -193,10 +185,7 @@ impl VirtualFilesystem {
 
     /// Get the decompressed file length for an open handle.
     pub fn dvd_get_length(&self, handle: u32) -> u32 {
-        self.open_files
-            .get(&handle)
-            .map(|f| f.length)
-            .unwrap_or(0)
+        self.open_files.get(&handle).map(|f| f.length).unwrap_or(0)
     }
 
     /// Read data from an open file into GameCube memory.
@@ -234,11 +223,9 @@ impl VirtualFilesystem {
                 ));
             }
 
-            let compressed =
-                &self.archive[toc_entry.data_offset..compressed_end];
-            let decompressed = zstd::decode_all(compressed).map_err(|e| {
-                format!("DVDRead: zstd decompression failed for '{}': {}", path, e)
-            })?;
+            let compressed = &self.archive[toc_entry.data_offset..compressed_end];
+            let decompressed = zstd::decode_all(compressed)
+                .map_err(|e| format!("DVDRead: zstd decompression failed for '{}': {}", path, e))?;
 
             log::debug!(
                 "DVDRead: decompressed '{}' ({} -> {} bytes)",

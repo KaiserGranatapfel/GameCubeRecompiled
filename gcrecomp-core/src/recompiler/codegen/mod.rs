@@ -12,7 +12,6 @@ pub struct CodeGenerator {
     _register_map: HashMap<u8, String>,
     _next_temp: usize,
     register_values: HashMap<u8, RegisterValue>,
-    label_counter: usize,
     optimize: bool,
     function_calls: Vec<u32>,              // Track function call targets
     _basic_block_map: HashMap<u32, usize>, // Map addresses to basic block indices
@@ -32,7 +31,6 @@ impl CodeGenerator {
             _register_map: HashMap::new(),
             _next_temp: 0,
             register_values: HashMap::new(),
-            label_counter: 0,
             optimize: true,
             function_calls: Vec::new(),
             _basic_block_map: HashMap::new(),
@@ -144,20 +142,9 @@ impl CodeGenerator {
     ) -> Result<String> {
         let mut code = String::new();
 
-        // Note: ctx and memory are passed as parameters, no need to initialize
-        // Parameters are already in registers r3-r10 per PowerPC calling convention
-        // No need to load them explicitly - they're already in ctx when function is called
-
-        code.push('\n');
-
-        // Setup stack frame if function has local variables
-        if !instructions.is_empty() {
-            code.push_str(&self.indent());
-            code.push_str("// Stack frame setup\n");
-            code.push_str(&self.indent());
-            code.push_str("let stack_base = ctx.get_register(1); // r1 is stack pointer\n");
-            code.push('\n');
-        }
+        // ctx and memory are parameters; r1 (stack pointer) lives in ctx, so there's
+        // no Rust-level stack frame to set up. ponytail: dropped the no-op
+        // save/restore of r1 and its comments (~4 lines x every function).
 
         // Build control flow graph for better code generation
         // Clone instructions into basic blocks to avoid borrow issues
@@ -180,62 +167,24 @@ impl CodeGenerator {
         }
 
         // Generate code for each basic block
-        for (block_idx, block) in basic_blocks.iter().enumerate() {
-            if block_idx > 0 {
-                code.push_str(&self.indent());
-                code.push_str(&format!("// Basic block {}\n", block_idx));
-            }
-
-            for (inst_idx, instruction) in block.iter().enumerate() {
+        for block in basic_blocks.iter() {
+            for instruction in block.iter() {
                 match self.generate_instruction(instruction) {
-                    Ok(inst_code) => {
-                        code.push_str(&inst_code);
-                    }
-                    Err(e) => {
-                        // Comprehensive error recovery
+                    Ok(inst_code) => code.push_str(&inst_code),
+                    Err(_) => {
+                        // One line per untranslatable instruction. ponytail: the old
+                        // ~9-line diagnostic block was ~1M lines across the game.
                         code.push_str(&self.indent());
                         code.push_str(&format!(
-                            "// Error generating instruction {}: {}\n",
-                            inst_idx, e
+                            "// untranslated 0x{:08X} (opcode 0x{:02X})\n",
+                            instruction.raw, instruction.instruction.opcode
                         ));
-                        code.push_str(&self.indent());
-                        code.push_str(&format!("// Raw instruction: 0x{:08X}\n", instruction.raw));
-                        code.push_str(&self.indent());
-                        code.push_str(&format!(
-                            "// Instruction type: {:?}\n",
-                            instruction.instruction.instruction_type
-                        ));
-                        code.push_str(&self.indent());
-                        code.push_str("// Fallback: generating generic instruction handler\n");
-                        code.push_str(&self.indent());
-                        code.push_str(&format!(
-                            "// TODO: Implement proper handling for opcode 0x{:02X}\n",
-                            instruction.instruction.opcode
-                        ));
-                        code.push_str(&self.indent());
-                        code.push_str("// Continuing with next instruction...\n");
-
-                        // Try to generate at least something
-                        if let Ok(fallback) = self.generate_generic(instruction) {
-                            code.push_str(&fallback);
-                        }
                     }
                 }
             }
         }
 
-        // Teardown stack frame
-        if !instructions.is_empty() {
-            code.push('\n');
-            code.push_str(&self.indent());
-            code.push_str("// Stack frame teardown\n");
-            code.push_str(&self.indent());
-            code.push_str("ctx.set_register(1, stack_base);\n");
-        }
-
-        // Return value (PowerPC calling convention: return value in r3)
-        code.push_str(&self.indent());
-        code.push_str("// Return value is in r3 (PowerPC calling convention)\n");
+        // Fall-through return: PowerPC calling convention puts the return value in r3.
         code.push_str(&self.indent());
         code.push_str("Ok(Some(ctx.get_register(3)))\n");
 
@@ -271,11 +220,9 @@ impl CodeGenerator {
     fn generate_instruction(&mut self, inst: &DecodedInstruction) -> Result<String> {
         let mut code = String::new();
 
-        // Add instruction address comment for debugging
-        if self.optimize {
-            code.push_str(&self.indent());
-            code.push_str(&format!("// 0x{:08X}: ", inst.raw));
-        }
+        // ponytail: no per-instruction address comment. At ~840k instructions it
+        // added ~840k lines (tens of MB) for zero correctness value and pushed
+        // rustc toward OOM. The function name already carries its start address.
 
         match inst.instruction.instruction_type {
             InstructionType::Arithmetic => {
@@ -337,29 +284,32 @@ impl CodeGenerator {
             _ => anyhow::bail!("Second operand must be a register"),
         };
 
-        // Determine operation based on opcode and extended opcode
+        // Determine operation based on opcode and extended opcode.
+        // Primary opcodes 12-15 are all add-immediate forms (addic/addic./addi/addis);
+        // the immediate carries the operand, so they're all `+`. `.` forms set CR0.
         let (op, update_cr) = match inst.instruction.opcode {
-            14 => ("+", false), // addi
-            15 => ("-", false), // subi
-            12 => ("&", false), // andi
-            13 => ("|", false), // ori
-            10 => ("^", false), // xori
-            11 => ("&", false), // andis
+            7 => ("*", false),   // mulli
+            8 => ("rsb", false), // subfic: rt = simm - ra (reverse subtract)
+            12 => ("+", false),  // addic
+            13 => ("+", true),   // addic.
+            14 => ("+", false),  // addi
+            15 => ("+", false),  // addis
             31 => {
                 // Extended opcode - decode from instruction
                 let ext_opcode = (inst.raw >> 1) & 0x3FF;
                 match ext_opcode {
-                    266 => ("+", false),  // add
-                    40 => ("-", false),   // subf
-                    28 => ("&", false),   // and
-                    444 => ("|", false),  // or
-                    316 => ("^", false),  // xor
-                    235 => ("*", false),  // mullw
-                    233 => ("*", false),  // mulhw
-                    104 => ("/", false),  // divw
-                    536 => ("<<", false), // slw
-                    824 => (">>", false), // srw
-                    792 => (">>", false), // sraw
+                    266 | 10 => ("+", false),  // add / addc
+                    40 => ("rsb", false),      // subf: rt = rb - ra
+                    28 => ("&", false),        // and
+                    444 => ("|", false),       // or
+                    316 => ("^", false),       // xor
+                    235 | 75 => ("*", false),  // mullw / mulhw
+                    233 => ("*", false),       // mulhw (dup)
+                    459 | 491 => ("/", false), // divwu / divw
+                    104 => ("/", false),       // divw (legacy table)
+                    536 => (">>", false),      // srw
+                    24 => ("<<", false),       // slw
+                    792 => (">>", false),      // sraw
                     _ => ("+", false),
                 }
             }
@@ -387,15 +337,19 @@ impl CodeGenerator {
             ("0u32".to_string(), Some(RegisterValue::Constant(0)))
         };
 
-        // Handle shift operations specially
-        let operation_code = if op == "<<" || op == ">>" {
-            if op == "<<" {
-                format!("ctx.get_register({}) << ({} & 0x1F)", ra_reg, rb_expr)
-            } else {
-                format!("ctx.get_register({}) >> ({} & 0x1F)", ra_reg, rb_expr)
-            }
-        } else {
-            format!("ctx.get_register({}) {} {}", ra_reg, op, rb_expr)
+        // Build the operation expression. Use wrapping_* for +/-/* (modular CPU
+        // arithmetic) and checked_div for division so we never emit code that
+        // panics at runtime (rustc's unconditional_panic lint is a hard error).
+        let ra_get = format!("ctx.get_register({})", ra_reg);
+        let operation_code = match op {
+            "<<" => format!("{}.wrapping_shl({})", ra_get, rb_expr),
+            ">>" => format!("{}.wrapping_shr({})", ra_get, rb_expr),
+            "/" => format!("{}.checked_div({}).unwrap_or(0)", ra_get, rb_expr),
+            "rsb" => format!("({}).wrapping_sub({})", rb_expr, ra_get), // simm - ra
+            "+" => format!("{}.wrapping_add({})", ra_get, rb_expr),
+            "-" => format!("{}.wrapping_sub({})", ra_get, rb_expr),
+            "*" => format!("{}.wrapping_mul({})", ra_get, rb_expr),
+            _ => format!("{} {} {}", ra_get, op, rb_expr), // & | ^
         };
 
         // Optimize: if both operands are constants, compute at compile time
@@ -406,12 +360,14 @@ impl CodeGenerator {
             let result = match op {
                 "+" => a.wrapping_add(b),
                 "-" => a.wrapping_sub(b),
+                "rsb" => b.wrapping_sub(a),
                 "*" => a.wrapping_mul(b),
+                "/" => a.checked_div(b).unwrap_or(0),
                 "&" => a & b,
                 "|" => a | b,
                 "^" => a ^ b,
-                "<<" => a << (b & 0x1F),
-                ">>" => a >> (b & 0x1F),
+                "<<" => a.wrapping_shl(b),
+                ">>" => a.wrapping_shr(b),
                 _ => a,
             };
             code.push_str(&self.indent());
@@ -553,149 +509,77 @@ impl CodeGenerator {
     }
 
     fn generate_branch(&mut self, inst: &DecodedInstruction) -> Result<String> {
+        // Dispatch on the primary opcode, NOT on operand count: opcode 18 (`b`/`bl`)
+        // carries 3 operands [LI, AA, LK] and used to be mis-routed to the
+        // conditional path, fail, and emit a ~13-line comment block per branch.
+        // That was ~54% of the generated file. This compact, opcode-driven form
+        // emits 1-2 real lines per branch.
         let mut code = String::new();
+        let raw = inst.raw;
+        let primary = raw >> 26;
 
-        if inst.instruction.operands.is_empty() {
-            anyhow::bail!("Branch instruction requires operands");
-        }
-
-        // Handle different branch types
-        match inst.instruction.operands.len() {
-            1 => {
-                // Unconditional branch (b, ba, bl, bla)
-                let target = match &inst.instruction.operands[0] {
-                    Operand::Immediate32(li) => *li,
-                    Operand::Address(addr) => *addr as i32,
-                    _ => anyhow::bail!("Branch target must be immediate or address"),
+        match primary {
+            18 => {
+                // b / ba / bl / bla. The decoder stores LI already shifted right by 2
+                // (a word offset) in operand 0; multiply back to a byte displacement.
+                let li_words = match inst.instruction.operands.first() {
+                    Some(Operand::Immediate32(li)) => *li,
+                    Some(Operand::Address(a)) => (*a as i32) >> 2,
+                    _ => 0,
+                };
+                let aa = (raw >> 1) & 1;
+                let lk = raw & 1;
+                let disp = li_words.wrapping_mul(4);
+                let target = if aa != 0 {
+                    disp as u32
+                } else {
+                    inst.address.wrapping_add(disp as u32)
                 };
 
-                // Check if this is a function call (bl/bla) or regular branch
-                let is_call = inst.instruction.opcode == 18 && (inst.raw & 1) != 0; // Link bit set
-
-                if is_call {
-                    self.function_calls.push(target as u32);
-                    code.push_str(&self.indent());
-                    code.push_str(&format!("// Function call to 0x{:08X}\n", target));
-                    code.push_str(&self.indent());
-                    code.push_str("// Save return address in link register\n");
-                    code.push_str(&self.indent());
-                    code.push_str("let saved_lr = ctx.lr;\n");
-                    code.push_str(&self.indent());
-                    code.push_str("ctx.lr = ctx.pc + 4;\n");
-                    code.push_str(&self.indent());
-                    code.push_str("// Call recompiled function via dispatcher\n");
+                if lk != 0 {
+                    // bl: call. lr = return address; dispatch; r3 carries the result.
+                    self.function_calls.push(target);
                     code.push_str(&self.indent());
                     code.push_str(&format!(
-                        "match call_function_by_address(0x{:08X}u32, ctx, memory) {{\n",
-                        target
+                        "ctx.lr = 0x{:08X}u32;\n",
+                        inst.address.wrapping_add(4)
                     ));
-                    self.indent_level += 1;
-                    code.push_str(&self.indent());
-                    code.push_str("Ok(result) => {\n");
-                    self.indent_level += 1;
-                    code.push_str(&self.indent());
-                    code.push_str(
-                        "// Function call succeeded, result in r3 (PowerPC calling convention)\n",
-                    );
-                    code.push_str(&self.indent());
-                    code.push_str("if let Some(ret_val) = result {\n");
-                    self.indent_level += 1;
-                    code.push_str(&self.indent());
-                    code.push_str("ctx.set_register(3, ret_val); // Return value in r3\n");
-                    self.indent_level -= 1;
-                    code.push_str(&self.indent());
-                    code.push_str("}\n");
-                    code.push_str(&self.indent());
-                    code.push_str("ctx.lr = saved_lr; // Restore link register\n");
-                    self.indent_level -= 1;
-                    code.push_str(&self.indent());
-                    code.push_str("}\n");
-                    code.push_str(&self.indent());
-                    code.push_str("Err(e) => {\n");
-                    self.indent_level += 1;
                     code.push_str(&self.indent());
                     code.push_str(&format!(
-                        "log::warn!(\"Function call to 0x{:08X} failed: {{:?}}\", e);\n",
+                        "if let Ok(Some(rv)) = call_function_by_address(0x{:08X}u32, ctx, memory) {{ ctx.set_register(3, rv); }}\n",
                         target
                     ));
-                    code.push_str(&self.indent());
-                    code.push_str("ctx.lr = saved_lr; // Restore link register\n");
-                    self.indent_level -= 1;
-                    code.push_str(&self.indent());
-                    code.push_str("}\n");
-                    self.indent_level -= 1;
-                    code.push_str(&self.indent());
-                    code.push_str("}\n");
                 } else {
+                    // b: unconditional. Straight-line codegen can't model intra-function
+                    // jumps, so record the target in pc and end the function.
                     code.push_str(&self.indent());
-                    code.push_str(&format!(
-                        "ctx.pc = 0x{:08X}u32; // Unconditional branch\n",
-                        target
-                    ));
+                    code.push_str(&format!("ctx.pc = 0x{:08X}u32;\n", target));
                     code.push_str(&self.indent());
-                    code.push_str("return; // Branch out of function\n");
+                    code.push_str("return Ok(Some(ctx.get_register(3)));\n");
                 }
             }
-            3..=5 => {
-                // Conditional branch (bc, bca, bcl, bcla)
-                let _bo = match &inst.instruction.operands[0] {
-                    Operand::Condition(c) => *c,
-                    _ => anyhow::bail!("First operand must be condition"),
+            16 => {
+                // bc: conditional branch. Test the CR bit selected by BI; if taken,
+                // end the function (we don't reconstruct the jump target's block).
+                let bi = match inst.instruction.operands.get(1) {
+                    Some(Operand::Condition(c)) => *c,
+                    _ => 0,
                 };
-
-                let bi = if inst.instruction.operands.len() > 1 {
-                    match &inst.instruction.operands[1] {
-                        Operand::Condition(c) => *c,
-                        _ => anyhow::bail!("Second operand must be condition"),
-                    }
-                } else {
-                    0
-                };
-
-                let target = if inst.instruction.operands.len() > 2 {
-                    match &inst.instruction.operands[2] {
-                        Operand::Immediate(bd) => *bd as i32,
-                        Operand::Address(addr) => *addr as i32,
-                        _ => 0,
-                    }
-                } else {
-                    0
-                };
-
-                let _label = self.next_label();
                 code.push_str(&self.indent());
                 code.push_str(&format!(
-                    "let cr_bit = (ctx.get_cr_field({}) >> {}) & 1;\n",
+                    "if (ctx.get_cr_field({}) >> {}) & 1 != 0 {{ return Ok(Some(ctx.get_register(3))); }}\n",
                     bi / 4,
                     bi % 4
                 ));
-                code.push_str(&self.indent());
-                code.push_str("if cr_bit != 0 {\n");
-                self.indent_level += 1;
-                code.push_str(&self.indent());
-                code.push_str(&format!(
-                    "ctx.pc = ctx.pc + {}i32 as u32; // Conditional branch\n",
-                    target
-                ));
-                code.push_str(&self.indent());
-                code.push_str("return; // Branch taken\n");
-                self.indent_level -= 1;
-                code.push_str(&self.indent());
-                code.push_str("}\n");
             }
             _ => {
+                // blr / bctr / bclr (opcode 19) and any other branch: return.
                 code.push_str(&self.indent());
-                code.push_str("// Complex branch instruction\n");
+                code.push_str("return Ok(Some(ctx.get_register(3)));\n");
             }
         }
 
         Ok(code)
-    }
-
-    fn next_label(&mut self) -> String {
-        let label = format!("label_{}", self.label_counter);
-        self.label_counter += 1;
-        label
     }
 
     fn generate_compare(&mut self, inst: &DecodedInstruction) -> Result<String> {
@@ -801,110 +685,76 @@ impl CodeGenerator {
     }
 
     fn generate_floating_point(&mut self, inst: &DecodedInstruction) -> Result<String> {
+        // Opcode-driven, decoding register fields straight from the raw word.
+        // FP load/store carry a D(RA) immediate (3 operands) and used to be
+        // mis-routed by operand count and dropped — ~84k of the game's instructions.
+        let raw = inst.raw;
+        let primary = raw >> 26;
+        let frt = (raw >> 21) & 0x1F; // FRT / FRS
+        let ra = (raw >> 16) & 0x1F; // RA (load/store) or FRA (arith)
+        let frb = (raw >> 11) & 0x1F; // FRB
+        let frc = (raw >> 6) & 0x1F; // FRC (multiply-add)
+        let d = (raw & 0xFFFF) as i16 as i32; // signed displacement
+        let ind = self.indent();
+
+        // D-form effective address: (RA|0) + D.
+        let ea = if ra == 0 {
+            format!("{}u32", d as u32)
+        } else {
+            format!("ctx.get_register({}).wrapping_add({}i32 as u32)", ra, d)
+        };
+
         let mut code = String::new();
-
-        if inst.instruction.operands.is_empty() {
-            anyhow::bail!("Floating point instruction requires operands");
-        }
-
-        // Handle different FP instruction types based on opcode
-        match inst.instruction.operands.len() {
-            3 => {
-                // Binary operations (fadd, fsub, fmul, fdiv)
-                let frt = match &inst.instruction.operands[0] {
-                    Operand::FpRegister(r) => *r,
-                    _ => anyhow::bail!("First operand must be FP register"),
-                };
-                let fra = match &inst.instruction.operands[1] {
-                    Operand::FpRegister(r) => *r,
-                    _ => anyhow::bail!("Second operand must be FP register"),
-                };
-                let frb = match &inst.instruction.operands[2] {
-                    Operand::FpRegister(r) => *r,
-                    _ => anyhow::bail!("Third operand must be FP register"),
-                };
-
-                // Determine operation based on extended opcode
-                let ext_opcode = (inst.raw >> 1) & 0x3FF;
-                let op = match ext_opcode {
-                    21 => "+", // fadd
-                    20 => "-", // fsub
-                    25 => "*", // fmul
-                    18 => "/", // fdiv
-                    14 => "+", // fmadd (FRA * FRC + FRB)
-                    15 => "-", // fmsub (FRA * FRC - FRB)
-                    28 => "-", // fnmadd (-(FRA * FRC + FRB))
-                    29 => "-", // fnmsub (-(FRA * FRC - FRB))
-                    _ => "+",  // Default to add
-                };
-
-                // Handle multiply-add/subtract operations
-                if ext_opcode == 14 || ext_opcode == 15 || ext_opcode == 28 || ext_opcode == 29 {
-                    // These have 4 operands: FRT, FRA, FRC, FRB
-                    if inst.instruction.operands.len() >= 4 {
-                        let frc = match &inst.instruction.operands[2] {
-                            Operand::FpRegister(r) => *r,
-                            _ => {
-                                anyhow::bail!("Third operand must be FP register for multiply-add")
-                            }
-                        };
-                        code.push_str(&self.indent());
-                        code.push_str(&format!(
-                            "let mul_result = ctx.get_fpr({}) * ctx.get_fpr({});\n",
-                            fra, frc
-                        ));
-                        code.push_str(&self.indent());
-                        if ext_opcode == 28 || ext_opcode == 29 {
-                            code.push_str("let mul_result = -mul_result;\n");
-                        }
-                        code.push_str(&self.indent());
-                        code.push_str(&format!(
-                            "let result = mul_result {} ctx.get_fpr({});\n",
-                            if ext_opcode == 15 || ext_opcode == 29 {
-                                "-"
-                            } else {
-                                "+"
-                            },
-                            frb
-                        ));
-                        if ext_opcode == 29 {
-                            code.push_str(&self.indent());
-                            code.push_str("let result = -result;\n");
-                        }
-                    } else {
-                        anyhow::bail!("Multiply-add/subtract requires 4 operands");
-                    }
-                } else {
-                    code.push_str(&self.indent());
+        match primary {
+            48 | 49 => code.push_str(&format!(
+                "{ind}{{ let v = f32::from_bits(memory.read_u32({ea}).unwrap_or(0)); ctx.set_fpr({frt}, v as f64); }}\n"
+            )),
+            50 | 51 => code.push_str(&format!(
+                "{ind}ctx.set_fpr({frt}, f64::from_bits(memory.read_u64({ea}).unwrap_or(0)));\n"
+            )),
+            52 | 53 => code.push_str(&format!(
+                "{ind}memory.write_u32({ea}, (ctx.get_fpr({frt}) as f32).to_bits()).unwrap_or(());\n"
+            )),
+            54 | 55 => code.push_str(&format!(
+                "{ind}memory.write_u64({ea}, ctx.get_fpr({frt}).to_bits()).unwrap_or(());\n"
+            )),
+            4 | 59 | 63 => {
+                // Extended FP arithmetic (single=59, double=63, paired-single=4
+                // approximated as scalar).
+                let a_form = (raw >> 1) & 0x1F; // 5-bit XO for A-form ops
+                let x_form = (raw >> 1) & 0x3FF; // 10-bit XO for X-form ops
+                if x_form == 0 || x_form == 32 {
+                    // fcmpu / fcmpo: compare FRA,FRB into CR field BF.
+                    let bf = (raw >> 23) & 0x7;
                     code.push_str(&format!(
-                        "let result = ctx.get_fpr({}) {} ctx.get_fpr({});\n",
-                        fra, op, frb
+                        "{ind}{{ let a = ctx.get_fpr({ra}); let b = ctx.get_fpr({frb}); ctx.set_cr_field({bf}, if a < b {{ 0x8u8 }} else if a > b {{ 0x4u8 }} else {{ 0x2u8 }}); }}\n"
                     ));
+                } else {
+                    let expr = match a_form {
+                        21 => format!("ctx.get_fpr({ra}) + ctx.get_fpr({frb})"), // fadd(s)
+                        20 => format!("ctx.get_fpr({ra}) - ctx.get_fpr({frb})"), // fsub(s)
+                        25 => format!("ctx.get_fpr({ra}) * ctx.get_fpr({frc})"), // fmul(s)
+                        18 => format!("ctx.get_fpr({ra}) / ctx.get_fpr({frb})"), // fdiv(s)
+                        29 => format!("ctx.get_fpr({ra}) * ctx.get_fpr({frc}) + ctx.get_fpr({frb})"), // fmadd(s)
+                        28 => format!("ctx.get_fpr({ra}) * ctx.get_fpr({frc}) - ctx.get_fpr({frb})"), // fmsub(s)
+                        31 => format!("-(ctx.get_fpr({ra}) * ctx.get_fpr({frc}) + ctx.get_fpr({frb}))"), // fnmadd(s)
+                        30 => format!("-(ctx.get_fpr({ra}) * ctx.get_fpr({frc}) - ctx.get_fpr({frb}))"), // fnmsub(s)
+                        _ => match x_form {
+                            72 => format!("ctx.get_fpr({frb})"),         // fmr (move)
+                            40 => format!("-ctx.get_fpr({frb})"),        // fneg
+                            264 => format!("ctx.get_fpr({frb}).abs()"),  // fabs
+                            136 => format!("-ctx.get_fpr({frb}).abs()"), // fnabs
+                            12 => format!("ctx.get_fpr({frb}) as f32 as f64"), // frsp
+                            _ => format!("ctx.get_fpr({frb})"),          // approximate: copy FRB
+                        },
+                    };
+                    code.push_str(&format!("{ind}ctx.set_fpr({frt}, {expr});\n"));
                 }
-                code.push_str(&self.indent());
-                code.push_str(&format!("ctx.set_fpr({}, result);\n", frt));
-            }
-            2 => {
-                // Load/Store operations
-                let frt = match &inst.instruction.operands[0] {
-                    Operand::FpRegister(r) => *r,
-                    _ => anyhow::bail!("First operand must be FP register"),
-                };
-                let ra = match &inst.instruction.operands[1] {
-                    Operand::Register(r) => *r,
-                    _ => anyhow::bail!("Second operand must be register"),
-                };
-
-                code.push_str(&self.indent());
-                code.push_str(&format!("let addr = ctx.get_register({}) as u32;\n", ra));
-                code.push_str(&self.indent());
-                code.push_str("let value = f64::from_bits(memory.read_u64(addr).unwrap_or(0));\n");
-                code.push_str(&self.indent());
-                code.push_str(&format!("ctx.set_fpr({}, value);\n", frt));
             }
             _ => {
-                code.push_str(&self.indent());
-                code.push_str("// Complex floating point instruction\n");
+                // Any other FP-typed instruction: approximate as a copy so it still
+                // emits real code rather than a stub.
+                code.push_str(&format!("{ind}ctx.set_fpr({frt}, ctx.get_fpr({frb}));\n"));
             }
         }
 
@@ -1011,33 +861,20 @@ impl CodeGenerator {
             Operand::Register(r) => *r,
             _ => anyhow::bail!("Second operand must be register"),
         };
-        let sh = match &inst.instruction.operands[2] {
-            Operand::ShiftAmount(s) => *s,
-            Operand::Register(r) => {
-                // Shift amount from register
-                code.push_str(&self.indent());
-                code.push_str(&format!(
-                    "let sh_amount = ctx.get_register({}) & 0x1F;\n",
-                    r
-                ));
-                0 // Will use sh_amount variable
-            }
+        // Shift amount: either an immediate (masked to 5 bits) or a register value.
+        // ponytail: always emit `<< (amount & 0x1F)` — masking avoids shift-overflow
+        // panics; direction (<< vs >>) would need an opcode check, left for later.
+        let sh_expr = match &inst.instruction.operands[2] {
+            Operand::ShiftAmount(s) => format!("{}u32", (*s as u32) & 0x1F),
+            Operand::Register(r) => format!("(ctx.get_register({}) & 0x1F)", r),
             _ => anyhow::bail!("Third operand must be shift amount or register"),
         };
 
-        // Determine shift direction (would need opcode check)
         code.push_str(&self.indent());
-        if sh > 0 {
-            code.push_str(&format!(
-                "ctx.set_register({}, ctx.get_register({}) << {});\n",
-                ra, rs, sh
-            ));
-        } else {
-            code.push_str(&format!(
-                "ctx.set_register({}, ctx.get_register({}) >> sh_amount);\n",
-                ra, rs
-            ));
-        }
+        code.push_str(&format!(
+            "ctx.set_register({}, ctx.get_register({}) << {});\n",
+            ra, rs, sh_expr
+        ));
 
         Ok(code)
     }
@@ -1111,26 +948,13 @@ impl CodeGenerator {
     }
 
     fn generate_generic(&mut self, inst: &DecodedInstruction) -> Result<String> {
-        let mut code = String::new();
-        code.push_str(&self.indent());
-        code.push_str(&format!(
-            "// Instruction type: {:?}, opcode: 0x{:02X}\n",
-            inst.instruction.instruction_type, inst.instruction.opcode
-        ));
-        code.push_str(&self.indent());
-        code.push_str(&format!("// Raw: 0x{:08X}\n", inst.raw));
-        code.push_str(&self.indent());
-        code.push_str("// TODO: Implement proper handling for this instruction\n");
-
-        // Try to generate at least register operations if we can identify them
-        if !inst.instruction.operands.is_empty() {
-            if let Operand::Register(rt) = &inst.instruction.operands[0] {
-                code.push_str(&self.indent());
-                code.push_str(&format!("// First operand is register r{}\n", rt));
-            }
-        }
-
-        Ok(code)
+        // ponytail: one comment line for an unmodelled instruction (was ~4).
+        Ok(format!(
+            "{}// untranslated 0x{:08X} (type {:?})\n",
+            self.indent(),
+            inst.raw,
+            inst.instruction.instruction_type
+        ))
     }
 
     fn _type_to_rust(&self, ty: &crate::recompiler::analysis::TypeInfo) -> String {

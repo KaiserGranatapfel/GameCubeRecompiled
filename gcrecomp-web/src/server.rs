@@ -10,7 +10,6 @@ use gcrecomp_lua::engine::LuaEngine;
 use crate::routes;
 use crate::security;
 
-
 pub struct AppState {
     pub lua_engine: Mutex<LuaEngine>,
     pub status_tx: broadcast::Sender<StatusEvent>,

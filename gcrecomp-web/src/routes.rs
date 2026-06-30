@@ -135,23 +135,35 @@ async fn handle_upload(
             })
         };
 
-        set("file_name", mlua::Value::String(lua.create_string(file_name).map_err(|e| {
-            state.recompiling.store(false, Ordering::SeqCst);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?))?;
-        set("game_title", mlua::Value::String(lua.create_string(game_title).map_err(|e| {
-            state.recompiling.store(false, Ordering::SeqCst);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?))?;
-        set("target", mlua::Value::String(lua.create_string(target).map_err(|e| {
-            state.recompiling.store(false, Ordering::SeqCst);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?))?;
+        set(
+            "file_name",
+            mlua::Value::String(lua.create_string(file_name).map_err(|e| {
+                state.recompiling.store(false, Ordering::SeqCst);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?),
+        )?;
+        set(
+            "game_title",
+            mlua::Value::String(lua.create_string(game_title).map_err(|e| {
+                state.recompiling.store(false, Ordering::SeqCst);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?),
+        )?;
+        set(
+            "target",
+            mlua::Value::String(lua.create_string(target).map_err(|e| {
+                state.recompiling.store(false, Ordering::SeqCst);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?),
+        )?;
         // Pass raw body as Lua binary string
-        set("body", mlua::Value::String(lua.create_string(body.as_ref()).map_err(|e| {
-            state.recompiling.store(false, Ordering::SeqCst);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?))?;
+        set(
+            "body",
+            mlua::Value::String(lua.create_string(body.as_ref()).map_err(|e| {
+                state.recompiling.store(false, Ordering::SeqCst);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?),
+        )?;
         set("body_len", mlua::Value::Integer(body.len() as i64))?;
 
         let result: mlua::Table = handle_fn.call(params).map_err(|e| {
@@ -384,8 +396,8 @@ async fn call_lua_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let result: mlua::Table = if let Some(val) = arg {
-        let lua_val =
-            json_to_lua_value(lua, &val).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let lua_val = json_to_lua_value(lua, &val)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         handle_fn
             .call(lua_val)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?

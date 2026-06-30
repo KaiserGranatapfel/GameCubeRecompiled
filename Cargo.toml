@@ -7,6 +7,7 @@ members = [
     "gcrecomp-lua",
     "gcrecomp-web",
     "game",
+    "recompiled",
 ]
 resolver = "2"
 
@@ -16,6 +17,21 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# Recompiled PowerPC code is inherently modular (wrapping) arithmetic, so debug
+# overflow checks would spuriously panic. ponytail: off here; emit explicit
+# wrapping_* in codegen if a finer distinction is ever needed.
+[profile.dev]
+overflow-checks = false
+
+# The generated `recompiled` crate is huge (millions of lines). debuginfo=2 makes
+# rustc stack-overflow (SIGSEGV) and balloons compile time/memory, so turn it off
+# and skip optimization there. ponytail: the generated code is machine output, not
+# something we debug at the Rust level — DWARF for it is pure cost.
+[profile.dev.package.recompiled]
+debug = false
+opt-level = 0
+incremental = false
 
 [workspace.package]
 version = "0.0.1-alpha"

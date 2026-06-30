@@ -318,8 +318,7 @@ fn convert_rvz_to_iso(rvz_data: &[u8]) -> Result<Vec<u8>, String> {
     let tmp_rvz = tmp_dir.join("gcrecomp_input.rvz");
     let tmp_iso = tmp_dir.join("gcrecomp_output.iso");
 
-    std::fs::write(&tmp_rvz, rvz_data)
-        .map_err(|e| format!("Failed to write temp RVZ: {}", e))?;
+    std::fs::write(&tmp_rvz, rvz_data).map_err(|e| format!("Failed to write temp RVZ: {}", e))?;
 
     log::info!("Converting RVZ to ISO using {}...", tool_path);
     let output = Command::new(&tool_path)

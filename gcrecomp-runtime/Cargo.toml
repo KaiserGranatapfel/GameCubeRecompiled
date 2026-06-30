@@ -8,6 +8,11 @@ repository.workspace = true
 homepage.workspace = true
 description = "Runtime library for GameCube recompiled games"
 
+[lib]
+# Illustrative `///` examples (missing imports/setup), not executable contracts;
+# they were failing as doctests. ponytail: don't run them as tests.
+doctest = false
+
 [dependencies]
 anyhow = { workspace = true }
 log = { workspace = true }

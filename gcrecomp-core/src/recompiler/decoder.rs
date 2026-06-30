@@ -733,7 +733,9 @@ impl Instruction {
             // Format: addc RT, RA, RB - handled in extended opcodes
             // Opcode 4: Load word and reserve indexed (lwarx) - extended opcode
             // For primary opcode 4, treat as reserved/unknown on 32-bit
-            4 => (InstructionType::Unknown, SmallVec::new()),
+            // Opcode 4: GameCube paired-single FP ops (ps_add, ps_mul, ...). Decoded
+            // from the raw word in codegen; approximated as scalar f64.
+            4 => (InstructionType::FloatingPoint, SmallVec::new()),
 
             // Opcode 5: Subtract from carrying (subfc)
             // Format: subfc RT, RA, RB - handled in extended opcodes
@@ -746,15 +748,35 @@ impl Instruction {
             // Opcode 6: Load double word (ld) - 64-bit only, not on GameCube
             6 => (InstructionType::Unknown, SmallVec::new()),
 
-            // Opcode 7: Subtract from extended (subfe)
-            // Format: subfe RT, RA, RB - handled in extended opcodes
-            // Opcode 7: Store double word (std) - 64-bit only, not on GameCube
-            7 => (InstructionType::Unknown, SmallVec::new()),
+            // Opcode 7: Multiply low immediate (mulli) — RT = RA * SI.
+            7 => {
+                let rt: u8 = ((word >> 21) & 0x1F) as u8;
+                let ra: u8 = ((word >> 16) & 0x1F) as u8;
+                let si: i16 = (word & 0xFFFF) as i16;
+                (
+                    InstructionType::Arithmetic,
+                    SmallVec::from_slice(&[
+                        Operand::Register(rt),
+                        Operand::Register(ra),
+                        Operand::Immediate(si),
+                    ]),
+                )
+            }
 
-            // Opcode 8: Add extended carrying (addze)
-            // Format: addze RT, RA - handled in extended opcodes
-            // Opcode 8: Load floating-point as integer word (lfq) - not on GameCube
-            8 => (InstructionType::Unknown, SmallVec::new()),
+            // Opcode 8: Subtract from immediate carrying (subfic) — RT = SI - RA.
+            8 => {
+                let rt: u8 = ((word >> 21) & 0x1F) as u8;
+                let ra: u8 = ((word >> 16) & 0x1F) as u8;
+                let si: i16 = (word & 0xFFFF) as i16;
+                (
+                    InstructionType::Arithmetic,
+                    SmallVec::from_slice(&[
+                        Operand::Register(rt),
+                        Operand::Register(ra),
+                        Operand::Immediate(si),
+                    ]),
+                )
+            }
 
             // Opcode 9: Subtract from extended zero (subfze)
             // Format: subfze RT, RA - handled in extended opcodes
@@ -1066,7 +1088,9 @@ impl Instruction {
             // Opcode 59: Floating-point operations (primary opcode 59)
             // Format: Various floating-point instructions
             // Handled in extended opcodes (opcode 63)
-            59 => (InstructionType::Unknown, SmallVec::new()),
+            // Opcode 59: single-precision FP arithmetic (fadds/fsubs/fmuls/fdivs/
+            // fmadds/...). Decoded from the raw word in codegen.
+            59 => (InstructionType::FloatingPoint, SmallVec::new()),
 
             // Opcode 60: Floating-point operations (primary opcode 60)
             // Format: Various floating-point instructions

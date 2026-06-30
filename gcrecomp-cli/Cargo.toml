@@ -13,7 +13,7 @@ name = "gcrecomp"
 path = "src/main.rs"
 
 [dependencies]
-gcrecomp-core = "0.0.1-alpha"
+gcrecomp-core = { path = "../gcrecomp-core" }
 clap = { workspace = true }
 indicatif = { workspace = true }
 anyhow = { workspace = true }

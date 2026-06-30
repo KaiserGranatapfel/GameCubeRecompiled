@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod codegen;
 pub mod decoder;
+pub mod enrich;
 pub mod error;
 pub mod ghidra;
 pub mod optimizer;

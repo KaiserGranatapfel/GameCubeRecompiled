@@ -1,0 +1,12 @@
+[package]
+name = "recompiled"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+gcrecomp-core = { path = "../gcrecomp-core" }
+anyhow = { workspace = true }
+log = { workspace = true }

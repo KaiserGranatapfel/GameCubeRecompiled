@@ -497,13 +497,8 @@ fn get_ghidra_download_url() -> Result<String> {
                     for asset in assets {
                         if let Some(name) = asset["name"].as_str() {
                             if name.ends_with(".zip") && name.contains("PUBLIC") {
-                                if let Some(url) =
-                                    asset["browser_download_url"].as_str()
-                                {
-                                    log::info!(
-                                        "Found latest Ghidra release: {}",
-                                        name
-                                    );
+                                if let Some(url) = asset["browser_download_url"].as_str() {
+                                    log::info!("Found latest Ghidra release: {}", name);
                                     return Ok(url.to_string());
                                 }
                             }
@@ -515,12 +510,12 @@ fn get_ghidra_download_url() -> Result<String> {
     }
 
     // Fallback to a known-good version
-    log::warn!(
-        "Could not determine latest Ghidra version from GitHub API, using fallback"
-    );
-    Ok("https://github.com/NationalSecurityAgency/ghidra/releases/download/\
+    log::warn!("Could not determine latest Ghidra version from GitHub API, using fallback");
+    Ok(
+        "https://github.com/NationalSecurityAgency/ghidra/releases/download/\
         Ghidra_11.3.1_build/ghidra_11.3.1_PUBLIC_20250219.zip"
-        .to_string())
+            .to_string(),
+    )
 }
 
 /// Download and install Ghidra to ~/.local/share/gcrecomp/.
@@ -554,9 +549,7 @@ fn download_and_install_ghidra() -> Result<PathBuf> {
                 .arg(&zip_path)
                 .arg(&download_url)
                 .status()
-                .context(
-                    "Failed to download Ghidra. Please install curl or wget.",
-                )?;
+                .context("Failed to download Ghidra. Please install curl or wget.")?;
 
             if !wget_status.success() {
                 anyhow::bail!("Failed to download Ghidra archive");
@@ -594,9 +587,7 @@ fn download_and_install_ghidra() -> Result<PathBuf> {
         }
     }
 
-    let ghidra_dir = ghidra_dir.context(
-        "Could not find extracted Ghidra directory after unzip",
-    )?;
+    let ghidra_dir = ghidra_dir.context("Could not find extracted Ghidra directory after unzip")?;
 
     // Make analyzeHeadless executable
     let analyze_headless_path = ghidra_dir.join("support").join("analyzeHeadless");
@@ -618,15 +609,10 @@ fn download_and_install_ghidra() -> Result<PathBuf> {
 
     // Verify the installation
     if ghidra_dir.join("support").join("analyzeHeadless").exists() {
-        log::info!(
-            "Ghidra installed successfully at: {}",
-            ghidra_dir.display()
-        );
+        log::info!("Ghidra installed successfully at: {}", ghidra_dir.display());
         Ok(ghidra_dir)
     } else {
-        anyhow::bail!(
-            "Ghidra installation appears incomplete — analyzeHeadless not found"
-        );
+        anyhow::bail!("Ghidra installation appears incomplete — analyzeHeadless not found");
     }
 }
 

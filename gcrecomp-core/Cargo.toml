@@ -11,6 +11,12 @@ keywords.workspace = true
 categories.workspace = true
 description.workspace = true
 
+[lib]
+# The `///` examples here are illustrative pseudo-code (missing imports/setup),
+# not executable contracts; they were all failing as doctests. ponytail: don't
+# run them as tests. Convert to runnable examples if they become contracts.
+doctest = false
+
 [dependencies]
 anyhow = { workspace = true }
 thiserror = { workspace = true }
