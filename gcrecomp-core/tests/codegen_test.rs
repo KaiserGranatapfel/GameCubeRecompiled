@@ -156,7 +156,8 @@ fn test_cntlzw_translates() {
 #[test]
 fn test_mtctr_sets_ctr() {
     // mtctr r12 ; blr — was a no-op, breaking every bctr/bctrl.
-    let code = gen(&[0x7D80_4BA6, 0x4E80_0020]);
+    // 0x7D8903A6 is the real encoding (the SPR field halves are swapped).
+    let code = gen(&[0x7D89_03A6, 0x4E80_0020]);
     assert!(
         code.contains("ctx.ctr = ctx.get_register(12)"),
         "mtctr must set CTR:\n{code}"

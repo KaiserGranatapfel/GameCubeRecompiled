@@ -1117,20 +1117,33 @@ impl CodeGenerator {
             let ext = (inst.raw >> 1) & 0x3FF;
             if ext == 467 || ext == 339 {
                 let reg = (inst.raw >> 21) & 0x1F; // RS (mtspr) / RT (mfspr)
-                let spr = (((inst.raw >> 16) & 0x1F) << 5) | ((inst.raw >> 11) & 0x1F);
+                                                   // SPR number: the 10-bit field's two 5-bit halves are swapped.
+                let spr = ((inst.raw >> 16) & 0x1F) | (((inst.raw >> 11) & 0x1F) << 5);
                 let field = match spr {
                     1 => Some("xer"),
                     8 => Some("lr"),
                     9 => Some("ctr"),
                     _ => None,
                 };
-                if let Some(f) = field {
-                    return Ok(if ext == 467 {
-                        format!("{}ctx.{} = ctx.get_register({});\n", self.indent(), f, reg)
-                    } else {
-                        format!("{}ctx.set_register({}, ctx.{});\n", self.indent(), reg, f)
-                    });
-                }
+                return Ok(if ext == 467 {
+                    // mtspr: write modeled SPRs; ignore the rest (HID/L2CR/etc.).
+                    match field {
+                        Some(f) => {
+                            format!("{}ctx.{} = ctx.get_register({});\n", self.indent(), f, reg)
+                        }
+                        None => format!("{}// mtspr {} ignored (unmodeled)\n", self.indent(), spr),
+                    }
+                } else {
+                    // mfspr: unmodeled SPRs (L2CR, HID, timebase, ...) read as 0 so
+                    // that hardware-wait loops (e.g. polling the L2 invalidate bit)
+                    // exit instead of spinning forever.
+                    match field {
+                        Some(f) => {
+                            format!("{}ctx.set_register({}, ctx.{});\n", self.indent(), reg, f)
+                        }
+                        None => format!("{}ctx.set_register({}, 0u32);\n", self.indent(), reg),
+                    }
+                });
             }
         }
 
