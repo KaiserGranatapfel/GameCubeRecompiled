@@ -65,13 +65,35 @@ impl GameApp {
                 .and_then(|s| parse_u32(&s))
                 .unwrap_or(d)
         };
+
+        // Did the recompiled boot program the VI framebuffer register (VI_TFBL,
+        // 0xCC00201C)? If so, that's the real XFB address. The register stores the
+        // physical address >> 5 in its low 24 bits.
+        let vi_xfb = memory
+            .read_u32(0xCC00_201C)
+            .ok()
+            .filter(|&v| v != 0)
+            .map(|tfbl| {
+                let xfb = 0x8000_0000 | ((tfbl & 0x00FF_FFFF) << 5);
+                info!("VI_TFBL=0x{tfbl:08X} -> using XFB at 0x{xfb:08X}");
+                xfb
+            });
+        if vi_xfb.is_none() {
+            info!("VI framebuffer register not programmed by boot; using default/env XFB");
+        }
+        // Priority: explicit env override > VI register > start of MEM1.
+        let xfb_addr = std::env::var("GCRECOMP_XFB")
+            .ok()
+            .and_then(|s| parse_u32(&s))
+            .or(vi_xfb)
+            .unwrap_or(0x8000_0000);
+
         Self {
             window: None,
             runtime: None,
             memory,
             menu_visible: false,
-            // Default to the start of MEM1; point GCRECOMP_XFB at your game's XFB.
-            xfb_addr: env_u32("GCRECOMP_XFB", 0x8000_0000),
+            xfb_addr,
             xfb_w: env_u32("GCRECOMP_XFB_W", 640),
             xfb_h: env_u32("GCRECOMP_XFB_H", 480),
         }

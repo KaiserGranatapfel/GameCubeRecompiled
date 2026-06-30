@@ -87,6 +87,31 @@ impl MemoryManager {
         }
     }
 
+    /// Resolve an address to its backing buffer and offset, covering both main RAM
+    /// and the hardware I/O register window (0xCC000000-0xCC00FFFF). This is what
+    /// makes recompiled writes to VI/DSP/DI/etc. registers actually land somewhere.
+    #[inline(always)]
+    fn region(&self, address: u32) -> Option<(&[u8], usize)> {
+        if let Some(off) = self.translate_address(address) {
+            Some((&self.ram, off))
+        } else if (0xCC000000..=0xCC00FFFF).contains(&address) {
+            Some((&self.io_regs, (address - 0xCC000000) as usize))
+        } else {
+            None
+        }
+    }
+
+    #[inline(always)]
+    fn region_mut(&mut self, address: u32) -> Option<(&mut [u8], usize)> {
+        if let Some(off) = self.translate_address(address) {
+            Some((&mut self.ram, off))
+        } else if (0xCC000000..=0xCC00FFFF).contains(&address) {
+            Some((&mut self.io_regs, (address - 0xCC000000) as usize))
+        } else {
+            None
+        }
+    }
+
     /// Read a byte from I/O register space (0xCC000000-0xCC00FFFF).
     #[inline]
     pub fn read_io_u8(&self, address: u32) -> Result<u8> {
@@ -162,10 +187,8 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn read_u8(&self, address: u32) -> Result<u8> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        Ok(self.ram[offset])
+        let (buf, off) = self.region(address).context("Invalid memory address")?;
+        buf.get(off).copied().context("Memory read out of bounds")
     }
 
     /// Read a 16-bit word (big-endian) from memory.
@@ -185,14 +208,11 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn read_u16(&self, address: u32) -> Result<u16> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        if offset.wrapping_add(1usize) >= self.ram.len() {
+        let (buf, off) = self.region(address).context("Invalid memory address")?;
+        if off + 2 > buf.len() {
             anyhow::bail!("Memory read out of bounds");
         }
-        let bytes: [u8; 2] = [self.ram[offset], self.ram[offset.wrapping_add(1usize)]];
-        Ok(u16::from_be_bytes(bytes))
+        Ok(u16::from_be_bytes([buf[off], buf[off + 1]]))
     }
 
     /// Read a 32-bit word (big-endian) from memory.
@@ -212,19 +232,16 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn read_u32(&self, address: u32) -> Result<u32> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        if offset.wrapping_add(3usize) >= self.ram.len() {
+        let (buf, off) = self.region(address).context("Invalid memory address")?;
+        if off + 4 > buf.len() {
             anyhow::bail!("Memory read out of bounds");
         }
-        let bytes: [u8; 4] = [
-            self.ram[offset],
-            self.ram[offset.wrapping_add(1usize)],
-            self.ram[offset.wrapping_add(2usize)],
-            self.ram[offset.wrapping_add(3usize)],
-        ];
-        Ok(u32::from_be_bytes(bytes))
+        Ok(u32::from_be_bytes([
+            buf[off],
+            buf[off + 1],
+            buf[off + 2],
+            buf[off + 3],
+        ]))
     }
 
     /// Read a 64-bit word (big-endian) from memory.
@@ -244,22 +261,12 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn read_u64(&self, address: u32) -> Result<u64> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        if offset.wrapping_add(7usize) >= self.ram.len() {
+        let (buf, off) = self.region(address).context("Invalid memory address")?;
+        if off + 8 > buf.len() {
             anyhow::bail!("Memory read out of bounds");
         }
-        let bytes: [u8; 8] = [
-            self.ram[offset],
-            self.ram[offset.wrapping_add(1usize)],
-            self.ram[offset.wrapping_add(2usize)],
-            self.ram[offset.wrapping_add(3usize)],
-            self.ram[offset.wrapping_add(4usize)],
-            self.ram[offset.wrapping_add(5usize)],
-            self.ram[offset.wrapping_add(6usize)],
-            self.ram[offset.wrapping_add(7usize)],
-        ];
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&buf[off..off + 8]);
         Ok(u64::from_be_bytes(bytes))
     }
 
@@ -281,10 +288,8 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn write_u8(&mut self, address: u32, value: u8) -> Result<()> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        self.ram[offset] = value;
+        let (buf, off) = self.region_mut(address).context("Invalid memory address")?;
+        *buf.get_mut(off).context("Memory write out of bounds")? = value;
         Ok(())
     }
 
@@ -306,15 +311,11 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn write_u16(&mut self, address: u32, value: u16) -> Result<()> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        if offset.wrapping_add(1usize) >= self.ram.len() {
+        let (buf, off) = self.region_mut(address).context("Invalid memory address")?;
+        if off + 2 > buf.len() {
             anyhow::bail!("Memory write out of bounds");
         }
-        let bytes: [u8; 2] = value.to_be_bytes();
-        self.ram[offset] = bytes[0];
-        self.ram[offset.wrapping_add(1usize)] = bytes[1];
+        buf[off..off + 2].copy_from_slice(&value.to_be_bytes());
         Ok(())
     }
 
@@ -336,17 +337,11 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn write_u32(&mut self, address: u32, value: u32) -> Result<()> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        if offset.wrapping_add(3usize) >= self.ram.len() {
+        let (buf, off) = self.region_mut(address).context("Invalid memory address")?;
+        if off + 4 > buf.len() {
             anyhow::bail!("Memory write out of bounds");
         }
-        let bytes: [u8; 4] = value.to_be_bytes();
-        self.ram[offset] = bytes[0];
-        self.ram[offset.wrapping_add(1usize)] = bytes[1];
-        self.ram[offset.wrapping_add(2usize)] = bytes[2];
-        self.ram[offset.wrapping_add(3usize)] = bytes[3];
+        buf[off..off + 4].copy_from_slice(&value.to_be_bytes());
         Ok(())
     }
 
@@ -368,16 +363,11 @@ impl MemoryManager {
     /// ```
     #[inline] // Hot path - may be inlined
     pub fn write_u64(&mut self, address: u32, value: u64) -> Result<()> {
-        let offset: usize = self
-            .translate_address(address)
-            .context("Invalid memory address")?;
-        if offset.wrapping_add(7usize) >= self.ram.len() {
+        let (buf, off) = self.region_mut(address).context("Invalid memory address")?;
+        if off + 8 > buf.len() {
             anyhow::bail!("Memory write out of bounds");
         }
-        let bytes: [u8; 8] = value.to_be_bytes();
-        for (i, byte) in bytes.iter().enumerate() {
-            self.ram[offset.wrapping_add(i)] = *byte;
-        }
+        buf[off..off + 8].copy_from_slice(&value.to_be_bytes());
         Ok(())
     }
 
@@ -534,5 +524,32 @@ impl Default for MemoryManager {
     #[inline] // Simple default implementation
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ram_roundtrip() {
+        let mut m = MemoryManager::new();
+        m.write_u32(0x8000_1000, 0xDEAD_BEEF).unwrap();
+        assert_eq!(m.read_u32(0x8000_1000).unwrap(), 0xDEAD_BEEF);
+        // Uncached mirror sees the same RAM.
+        assert_eq!(m.read_u32(0xC000_1000).unwrap(), 0xDEAD_BEEF);
+    }
+
+    #[test]
+    fn hardware_registers_route_to_io_space() {
+        // 0xCC002000 is the VI register block. Before the region() fix these
+        // writes returned Err and were dropped; now they persist and read back.
+        let mut m = MemoryManager::new();
+        m.write_u32(0xCC00_201C, 0x0123_4567).unwrap(); // VI_TFBL (XFB address)
+        assert_eq!(m.read_u32(0xCC00_201C).unwrap(), 0x0123_4567);
+        m.write_u16(0xCC00_2002, 0xABCD).unwrap();
+        assert_eq!(m.read_u16(0xCC00_2002).unwrap(), 0xABCD);
+        m.write_u8(0xCC00_3000, 0x42).unwrap(); // DSP region
+        assert_eq!(m.read_u8(0xCC00_3000).unwrap(), 0x42);
     }
 }
