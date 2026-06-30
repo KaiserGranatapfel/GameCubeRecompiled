@@ -121,6 +121,25 @@ fn test_mulli_translates_to_multiply() {
 }
 
 #[test]
+fn test_bctr_dispatches_via_ctr() {
+    // bctr (branch to CTR — function pointer / vtable) ; blr.
+    let code = gen(&[0x4E80_0420, 0x4E80_0020]);
+    assert!(
+        code.contains("call_function_by_address(ctx.ctr"),
+        "bctr must dispatch through CTR:\n{code}"
+    );
+}
+
+#[test]
+fn test_state_machine_has_loop_and_match() {
+    // A backward conditional branch should produce a block state machine.
+    // addi r3,r3,1 ; bdnz back ; blr
+    let code = gen(&[0x3863_0001, 0x4200_FFFC, 0x4E80_0020]);
+    assert!(code.contains("loop {"), "function body is a loop:\n{code}");
+    assert!(code.contains("match __blk"), "block dispatch:\n{code}");
+}
+
+#[test]
 fn test_sanitize_identifier() {
     let codegen = CodeGenerator::new();
 

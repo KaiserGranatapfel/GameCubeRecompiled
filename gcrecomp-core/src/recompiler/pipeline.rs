@@ -294,11 +294,10 @@ impl RecompilationPipeline {
             ));
         }
 
-        rust_code.push_str("        _ => {\n");
-        rust_code
-            .push_str("            log::warn!(\"Unknown function address: 0x{:08X}\", address);\n");
-        rust_code.push_str("            Ok(None)\n");
-        rust_code.push_str("        }\n");
+        // Unknown address (e.g. an indirect branch to an address we didn't
+        // recompile): return silently. Logging here floods at runtime because a
+        // bctr-to-CTR loop can hit it millions of times.
+        rust_code.push_str("        _ => Ok(None),\n");
         rust_code.push_str("    }\n");
         rust_code.push_str("}\n\n");
 

@@ -145,11 +145,18 @@ impl CodeGenerator {
         // 3. Emit the state machine.
         let ind = self.indent();
         let mut code = String::new();
+        // Watchdog check, once per call: bounds total recompiled work so a call
+        // into recompiled code always returns (it may spin on unemulated hw).
+        code.push_str(&format!(
+            "{ind}if gcrecomp_core::runtime::out_of_budget() {{ return Ok(Some(ctx.get_register(3))); }}\n"
+        ));
         code.push_str(&format!("{ind}let mut __blk: u32 = 0;\n"));
         code.push_str(&format!("{ind}let mut __steps: u64 = 0;\n"));
         code.push_str(&format!("{ind}loop {{\n"));
+        // Loop guard: per-function hard cap, plus a cheap watchdog poll every 64K
+        // iterations so a spinning loop bails promptly once the deadline passes.
         code.push_str(&format!(
-            "{ind}__steps += 1; if __steps > 50_000_000 {{ return Ok(Some(ctx.get_register(3))); }}\n"
+            "{ind}__steps += 1; if __steps > 8_000_000 || (__steps & 0xFFFF == 0 && gcrecomp_core::runtime::out_of_budget()) {{ return Ok(Some(ctx.get_register(3))); }}\n"
         ));
         code.push_str(&format!("{ind}match __blk {{\n"));
 
@@ -295,7 +302,46 @@ impl CodeGenerator {
                 };
                 format!("{pre}{ind}if ({ctr_ok}) && ({cr_ok}) {{ {taken} }} else {{ {next} }}\n")
             }
-            _ => format!("{ind}{ret}\n"), // blr / bctr / bclr
+            19 => {
+                // Register-indirect branches: bclr (xo=16 — return via LR) and bctr
+                // (xo=528 — branch to CTR: function pointers, C++ vtables, etc.).
+                let xo = (raw >> 1) & 0x3FF;
+                let bo = (raw >> 21) & 0x1F;
+                let bi = (raw >> 16) & 0x1F;
+                let lk = raw & 1;
+                let cond = if bo & 0x10 != 0 {
+                    "true".to_string()
+                } else {
+                    format!(
+                        "((ctx.get_cr_field({}) >> {}) & 1 != 0) == {}",
+                        bi / 4,
+                        3 - (bi % 4),
+                        bo & 0x08 != 0
+                    )
+                };
+                let action = if xo == 528 {
+                    // bctr/bctrl: dispatch through CTR via the function table. Handles
+                    // indirect calls/virtual dispatch; intra-function computed gotos
+                    // (jump tables) fall through to the dispatcher's unknown-addr path.
+                    if lk != 0 {
+                        format!(
+                            "ctx.lr = 0x{:08X}u32; if let Ok(Some(rv)) = call_function_by_address(ctx.ctr, ctx, memory) {{ ctx.set_register(3, rv); }} {next}",
+                            inst.address.wrapping_add(4)
+                        )
+                    } else {
+                        "if let Ok(Some(rv)) = call_function_by_address(ctx.ctr, ctx, memory) { ctx.set_register(3, rv); } return Ok(Some(ctx.get_register(3)));".to_string()
+                    }
+                } else {
+                    // bclr/blr: return to the caller (the Rust function return).
+                    ret.clone()
+                };
+                if bo & 0x10 != 0 {
+                    format!("{ind}{action}\n")
+                } else {
+                    format!("{ind}if {cond} {{ {action} }} else {{ {next} }}\n")
+                }
+            }
+            _ => format!("{ind}{ret}\n"),
         }
     }
 

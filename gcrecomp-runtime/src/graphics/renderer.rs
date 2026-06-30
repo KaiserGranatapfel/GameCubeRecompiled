@@ -24,6 +24,17 @@ pub struct Renderer {
     efb_view: Option<TextureView>,
     depth_texture: Option<Texture>,
     depth_view: Option<TextureView>,
+    /// Lazily-built pipeline for blitting a CPU framebuffer (XFB) to the screen.
+    blit: Option<Blit>,
+    /// Cached XFB upload texture (recreated when the framebuffer size changes).
+    xfb: Option<(Texture, u32, u32)>,
+}
+
+/// Fullscreen-quad blit pipeline used to present a memory framebuffer.
+struct Blit {
+    pipeline: RenderPipeline,
+    bind_group_layout: BindGroupLayout,
+    sampler: Sampler,
 }
 
 impl Renderer {
@@ -79,15 +90,16 @@ impl Renderer {
             }
         "#;
 
+        // NB: `sampler` and `texture` are WGSL reserved keywords — use tex/samp.
         let default_frag = r#"
-            @group(0) @binding(0) var texture: texture_2d<f32>;
-            @group(0) @binding(1) var sampler: sampler;
+            @group(0) @binding(0) var tex: texture_2d<f32>;
+            @group(0) @binding(1) var samp: sampler;
             struct FragmentInput {
                 @location(0) tex_coord: vec2<f32>,
             }
             @fragment
             fn main(input: FragmentInput) -> @location(0) vec4<f32> {
-                return textureSample(texture, sampler, input.tex_coord);
+                return textureSample(tex, samp, input.tex_coord);
             }
         "#;
 
@@ -114,6 +126,8 @@ impl Renderer {
             efb_view: Some(efb_view),
             depth_texture: Some(depth_texture),
             depth_view: Some(depth_view),
+            blit: None,
+            xfb: None,
         })
     }
 
@@ -269,5 +283,195 @@ impl Renderer {
 
     pub fn queue(&self) -> &Queue {
         &self.queue
+    }
+
+    fn ensure_blit(&mut self) {
+        if self.blit.is_some() {
+            return;
+        }
+        const BLIT_WGSL: &str = r#"
+            struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+            @vertex
+            fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
+                var out: VsOut;
+                let x = f32((idx << 1u) & 2u);
+                let y = f32(idx & 2u);
+                out.uv = vec2<f32>(x, y);
+                out.pos = vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+                return out;
+            }
+            @group(0) @binding(0) var tex: texture_2d<f32>;
+            @group(0) @binding(1) var samp: sampler;
+            @fragment
+            fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+                return textureSample(tex, samp, in.uv);
+            }
+        "#;
+        let shader = self.device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("blit"),
+            source: ShaderSource::Wgsl(BLIT_WGSL.into()),
+        });
+        let bind_group_layout = self
+            .device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("blit bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Texture {
+                            sample_type: TextureSampleType::Float { filterable: true },
+                            view_dimension: TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let layout = self
+            .device
+            .create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("blit layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let pipeline = self
+            .device
+            .create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("blit pipeline"),
+                layout: Some(&layout),
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[],
+                },
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(ColorTargetState {
+                        format: self.config.format,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                primitive: PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                multiview: None,
+            });
+        let sampler = self.device.create_sampler(&SamplerDescriptor::default());
+        self.blit = Some(Blit {
+            pipeline,
+            bind_group_layout,
+            sampler,
+        });
+    }
+
+    /// Present an RGBA8 framebuffer (read from emulated RAM) to the window by
+    /// uploading it to a texture and blitting it fullscreen. `rgba.len()` must be
+    /// `w * h * 4`.
+    pub fn present_framebuffer(&mut self, rgba: &[u8], w: u32, h: u32) -> Result<()> {
+        if w == 0 || h == 0 || rgba.len() < (w as usize * h as usize * 4) {
+            return Ok(());
+        }
+        self.ensure_blit();
+
+        let need_new = self
+            .xfb
+            .as_ref()
+            .map(|(_, tw, th)| *tw != w || *th != h)
+            .unwrap_or(true);
+        if need_new {
+            let tex = self.device.create_texture(&TextureDescriptor {
+                label: Some("xfb"),
+                size: Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.xfb = Some((tex, w, h));
+        }
+        let tex = &self.xfb.as_ref().unwrap().0;
+        self.queue.write_texture(
+            ImageCopyTexture {
+                texture: tex,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &rgba[..(w as usize * h as usize * 4)],
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * w),
+                rows_per_image: Some(h),
+            },
+            Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let view = tex.create_view(&TextureViewDescriptor::default());
+        let blit = self.blit.as_ref().unwrap();
+        let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("blit bg"),
+            layout: &blit.bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&blit.sampler),
+                },
+            ],
+        });
+
+        let output = self.surface.get_current_texture()?;
+        let out_view = output
+            .texture
+            .create_view(&TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("blit enc"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("blit pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &out_view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&blit.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        Ok(())
     }
 }

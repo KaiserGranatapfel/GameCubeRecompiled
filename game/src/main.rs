@@ -19,10 +19,13 @@ use winit::window::Window;
 struct GameApp {
     window: Option<Arc<Window>>,
     runtime: Option<gcrecomp_runtime::runtime::Runtime>,
-    _memory: MemoryManager,
-    _os_state: OsState,
-    _ctx: CpuContext,
+    /// The recompiled execution's RAM, persisted so the renderer can read the XFB.
+    memory: MemoryManager,
     menu_visible: bool,
+    /// External framebuffer (XFB) location/size to present, configurable via env.
+    xfb_addr: u32,
+    xfb_w: u32,
+    xfb_h: u32,
 }
 
 impl GameApp {
@@ -31,28 +34,95 @@ impl GameApp {
         let mut os_state = OsState::new();
         let mut ctx = CpuContext::new();
 
-        // Run SDK init sequence
+        // SDK init + DVD filesystem + load the DOL's real memory image into RAM.
         gcrecomp_core::runtime::sdk::os::os_init(&mut os_state, &mut memory);
-
-        // Initialize DVD virtual filesystem from embedded assets
         os_state.init_dvd(assets::ARCHIVE);
+        recompiled::load_image(&mut memory);
 
-        // Setup initial CPU context
         ctx.set_register(1, 0x817F_FF00); // r1 = stack pointer (top of MEM1)
-        ctx.set_register(13, 0x8040_0000); // Typical SDA base
-        ctx.set_register(2, 0x8040_0000); // Typical SDA2 base
+        ctx.set_register(2, 0x8040_0000); // SDA2 base
+        ctx.set_register(13, 0x8040_0000); // SDA base
 
-        info!("SDK initialized, CPU context ready");
+        // Run the recompiled entry once; its writes to RAM persist in `memory`,
+        // which the render loop then presents as the framebuffer.
+        let entry = recompiled::ENTRY_POINT;
+        info!("Running recompiled entry point 0x{:08X}...", entry);
+        // Give the recompiled boot code a few seconds, then stop it (it spins on
+        // hardware we don't fully emulate). The window then shows the resulting XFB.
+        gcrecomp_core::runtime::arm_watchdog(5);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            recompiled::call_function_by_address(entry, &mut ctx, &mut memory)
+        }));
+        match r {
+            Ok(Ok(v)) => info!("Recompiled entry 0x{:08X} returned {:?}", entry, v),
+            Ok(Err(e)) => log::warn!("Recompiled entry 0x{:08X} error: {e}", entry),
+            Err(_) => log::warn!("Recompiled entry 0x{:08X} panicked (contained)", entry),
+        }
 
+        let env_u32 = |k: &str, d: u32| {
+            std::env::var(k)
+                .ok()
+                .and_then(|s| parse_u32(&s))
+                .unwrap_or(d)
+        };
         Self {
             window: None,
             runtime: None,
-            _memory: memory,
-            _os_state: os_state,
-            _ctx: ctx,
+            memory,
             menu_visible: false,
+            // Default to the start of MEM1; point GCRECOMP_XFB at your game's XFB.
+            xfb_addr: env_u32("GCRECOMP_XFB", 0x8000_0000),
+            xfb_w: env_u32("GCRECOMP_XFB_W", 640),
+            xfb_h: env_u32("GCRECOMP_XFB_H", 480),
         }
     }
+}
+
+/// Parse a u32 from decimal or `0x`-prefixed hex.
+fn parse_u32(s: &str) -> Option<u32> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
+/// BT.601 YUV (0-255) -> RGB (0-255).
+fn yuv_to_rgb(y: u8, cb: u8, cr: u8) -> [u8; 3] {
+    let y = y as f32;
+    let cb = cb as f32 - 128.0;
+    let cr = cr as f32 - 128.0;
+    let clamp = |v: f32| v.clamp(0.0, 255.0) as u8;
+    [
+        clamp(y + 1.402 * cr),
+        clamp(y - 0.344 * cb - 0.714 * cr),
+        clamp(y + 1.772 * cb),
+    ]
+}
+
+/// Read a GameCube XFB (YUYV 4:2:2) from emulated RAM into RGBA8.
+fn read_xfb_rgba(memory: &MemoryManager, addr: u32, w: u32, h: u32) -> Vec<u8> {
+    let mut out = vec![0u8; (w as usize) * (h as usize) * 4];
+    for y in 0..h {
+        for x2 in 0..(w / 2) {
+            // 4 bytes (Y0, Cb, Y1, Cr) per 2 horizontal pixels.
+            let off = addr.wrapping_add((y * w + x2 * 2) * 2);
+            let word = memory.read_u32(off).unwrap_or(0);
+            let y0 = (word >> 24) as u8;
+            let cb = (word >> 16) as u8;
+            let y1 = (word >> 8) as u8;
+            let cr = word as u8;
+            let p0 = yuv_to_rgb(y0, cb, cr);
+            let p1 = yuv_to_rgb(y1, cb, cr);
+            let base = ((y * w + x2 * 2) * 4) as usize;
+            out[base..base + 3].copy_from_slice(&p0);
+            out[base + 3] = 255;
+            out[base + 4..base + 7].copy_from_slice(&p1);
+            out[base + 7] = 255;
+        }
+    }
+    out
 }
 
 impl ApplicationHandler for GameApp {
@@ -136,14 +206,12 @@ impl ApplicationHandler for GameApp {
                 info!("Menu toggle: {}", self.menu_visible);
             }
             WindowEvent::RedrawRequested => {
+                // Present the emulated external framebuffer (XFB) read from RAM.
+                let (addr, w, h) = (self.xfb_addr, self.xfb_w, self.xfb_h);
+                let rgba = read_xfb_rgba(&self.memory, addr, w, h);
                 if let Some(renderer) = runtime.renderer_mut() {
-                    match renderer.begin_frame() {
-                        Ok(frame) => {
-                            renderer.end_frame(frame);
-                        }
-                        Err(e) => {
-                            log::warn!("Frame error: {}", e);
-                        }
+                    if let Err(e) = renderer.present_framebuffer(&rgba, w, h) {
+                        log::warn!("Present error: {e}");
                     }
                 }
             }
@@ -188,18 +256,14 @@ fn main() -> Result<()> {
         }
     }
 
-    // 3. Execute the recompiled entry point once (end-to-end: the generated game
-    //    code actually runs). Contained in catch_unwind so a fault in the recompiled
-    //    code logs and continues instead of taking down the host.
-    run_recompiled_entry();
-
-    // 4. Create event loop and run the windowed runtime. On a headless system
-    //    (no display server) there's nothing to open a window on — the recompiled
-    //    code has already run, so exit cleanly rather than erroring.
+    // 3. Create the event loop and run. GameApp::new() runs the recompiled entry
+    //    (persisting its RAM), and the render loop presents that RAM as the XFB.
+    //    On a headless system there's no display, so exit cleanly.
     let event_loop = match EventLoop::new() {
         Ok(el) => el,
         Err(e) => {
-            log::warn!("No display ({e}); recompiled entry ran, exiting cleanly (headless).");
+            log::warn!("No display ({e}); running recompiled entry headless then exiting.");
+            let _ = GameApp::new();
             return Ok(());
         }
     };
@@ -211,33 +275,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Invoke the recompiled DOL entry point through the generated dispatcher.
-/// This is the end-to-end link: parsed DOL -> recompiled Rust -> executed here.
-fn run_recompiled_entry() {
-    let mut memory = MemoryManager::new();
-    let mut os_state = OsState::new();
-    let mut ctx = CpuContext::new();
-
-    gcrecomp_core::runtime::sdk::os::os_init(&mut os_state, &mut memory);
-    // Load the DOL's text+data sections into RAM so the recompiled code reads
-    // real data instead of zeros.
-    recompiled::load_image(&mut memory);
-    ctx.set_register(1, 0x817F_FF00); // r1 = stack pointer (top of MEM1)
-    ctx.set_register(2, 0x8040_0000); // SDA2 base
-    ctx.set_register(13, 0x8040_0000); // SDA base
-
-    let entry = recompiled::ENTRY_POINT;
-    info!("Running recompiled entry point 0x{:08X}...", entry);
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        recompiled::call_function_by_address(entry, &mut ctx, &mut memory)
-    }));
-
-    match result {
-        Ok(Ok(ret)) => info!("Recompiled entry 0x{:08X} returned {:?}", entry, ret),
-        Ok(Err(e)) => log::warn!("Recompiled entry 0x{:08X} returned error: {}", entry, e),
-        Err(_) => log::warn!("Recompiled entry 0x{:08X} panicked (contained)", entry),
-    }
 }
