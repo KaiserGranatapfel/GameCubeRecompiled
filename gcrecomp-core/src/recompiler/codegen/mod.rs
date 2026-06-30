@@ -145,6 +145,11 @@ impl CodeGenerator {
         // 3. Emit the state machine.
         let ind = self.indent();
         let mut code = String::new();
+        // Optional call trace (env GCRECOMP_TRACE) to see the boot's actual path.
+        code.push_str(&format!(
+            "{ind}gcrecomp_core::runtime::trace_call(0x{:08X}u32);\n",
+            func_start
+        ));
         // Watchdog check, once per call: bounds total recompiled work so a call
         // into recompiled code always returns (it may spin on unemulated hw).
         code.push_str(&format!(
@@ -331,6 +336,14 @@ impl CodeGenerator {
                     } else {
                         "if let Ok(Some(rv)) = call_function_by_address(ctx.ctr, ctx, memory) { ctx.set_register(3, rv); } return Ok(Some(ctx.get_register(3)));".to_string()
                     }
+                } else if lk != 0 {
+                    // bclrl/blrl: indirect CALL via LR (target = LR, then LR := next).
+                    // Common after `mtlr`. Treating this as a plain return (the old
+                    // behavior) silently skipped these calls during boot.
+                    format!(
+                        "{{ let __t = ctx.lr; ctx.lr = 0x{:08X}u32; if let Ok(Some(rv)) = call_function_by_address(__t, ctx, memory) {{ ctx.set_register(3, rv); }} }} {next}",
+                        inst.address.wrapping_add(4)
+                    )
                 } else {
                     // bclr/blr: return to the caller (the Rust function return).
                     ret.clone()
@@ -423,6 +436,30 @@ impl CodeGenerator {
 
     fn generate_arithmetic(&mut self, inst: &DecodedInstruction) -> Result<String> {
         let mut code = String::new();
+
+        // Unary X-form opcode-31 ops (operands `RA, RS`). These don't fit the
+        // binary `rt = ra OP rb` shape below; decode the register fields straight
+        // from the raw word. cntlzw was being mistranslated as an add, which broke
+        // any function using it (e.g. number classification) and hung the boot.
+        if inst.instruction.opcode == 31 {
+            let ext = (inst.raw >> 1) & 0x3FF;
+            let rs = (inst.raw >> 21) & 0x1F; // RS (source)
+            let ra = (inst.raw >> 16) & 0x1F; // RA (destination)
+            let unary = match ext {
+                26 => Some(format!("ctx.get_register({rs}).leading_zeros()")), // cntlzw
+                922 => Some(format!("ctx.get_register({rs}) as i16 as i32 as u32")), // extsh
+                954 => Some(format!("ctx.get_register({rs}) as i8 as i32 as u32")), // extsb
+                _ => None,
+            };
+            if let Some(expr) = unary {
+                return Ok(format!(
+                    "{}ctx.set_register({}, {});\n",
+                    self.indent(),
+                    ra,
+                    expr
+                ));
+            }
+        }
 
         if inst.instruction.operands.len() < 2 {
             anyhow::bail!("Arithmetic instruction requires at least 2 operands");
@@ -1072,6 +1109,30 @@ impl CodeGenerator {
 
     fn generate_system(&mut self, inst: &DecodedInstruction) -> Result<String> {
         let mut code = String::new();
+
+        // mtspr/mfspr (opcode 31, ext 467/339): move to/from a special register.
+        // Only mtlr/mflr were handled before, so mtctr was a no-op — which broke
+        // EVERY bctr/bctrl (function pointers, vtables, the C++ constructor loop).
+        if inst.instruction.opcode == 31 {
+            let ext = (inst.raw >> 1) & 0x3FF;
+            if ext == 467 || ext == 339 {
+                let reg = (inst.raw >> 21) & 0x1F; // RS (mtspr) / RT (mfspr)
+                let spr = (((inst.raw >> 16) & 0x1F) << 5) | ((inst.raw >> 11) & 0x1F);
+                let field = match spr {
+                    1 => Some("xer"),
+                    8 => Some("lr"),
+                    9 => Some("ctr"),
+                    _ => None,
+                };
+                if let Some(f) = field {
+                    return Ok(if ext == 467 {
+                        format!("{}ctx.{} = ctx.get_register({});\n", self.indent(), f, reg)
+                    } else {
+                        format!("{}ctx.set_register({}, ctx.{});\n", self.indent(), reg, f)
+                    });
+                }
+            }
+        }
 
         // Handle system instructions
         if !inst.instruction.operands.is_empty() {

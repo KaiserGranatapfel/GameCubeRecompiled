@@ -140,6 +140,30 @@ fn test_state_machine_has_loop_and_match() {
 }
 
 #[test]
+fn test_cntlzw_translates() {
+    // cntlzw r0, r3 ; blr — was mistranslated as an add, hanging the boot.
+    let code = gen(&[0x7C60_0034, 0x4E80_0020]);
+    assert!(
+        code.contains("leading_zeros"),
+        "cntlzw must use leading_zeros:\n{code}"
+    );
+    assert!(
+        !code.contains("wrapping_add"),
+        "cntlzw is not an add:\n{code}"
+    );
+}
+
+#[test]
+fn test_mtctr_sets_ctr() {
+    // mtctr r12 ; blr — was a no-op, breaking every bctr/bctrl.
+    let code = gen(&[0x7D80_4BA6, 0x4E80_0020]);
+    assert!(
+        code.contains("ctx.ctr = ctx.get_register(12)"),
+        "mtctr must set CTR:\n{code}"
+    );
+}
+
+#[test]
 fn test_sanitize_identifier() {
     let codegen = CodeGenerator::new();
 

@@ -728,37 +728,68 @@ impl RecompilationPipeline {
             basic_blocks: vec![],
         };
 
-        let mut functions: Vec<FunctionInfo> = Vec::new();
-        let mut cur_start: Option<u32> = None;
-        let mut cur_bytes: u32 = 0;
-        let mut seen = 0usize;
+        // Scan the instruction window (from the entry, bounded).
+        let scanned: Vec<&DecodedInstruction> = instructions
+            .iter()
+            .filter(|i| i.address >= entry)
+            .take(max_instrs)
+            .collect();
+        if scanned.is_empty() {
+            return GhidraAnalysis {
+                functions: vec![],
+                symbols: vec![],
+                decompiled_code: std::collections::HashMap::new(),
+                instructions: std::collections::HashMap::new(),
+            };
+        }
+        let lo = scanned.first().unwrap().address;
+        let hi = scanned.last().unwrap().address.wrapping_add(4);
+        let in_text = |a: u32| a >= lo && a < hi;
 
-        for inst in instructions.iter().filter(|i| i.address >= entry) {
-            if functions.len() >= max_funcs || seen >= max_instrs {
-                break;
+        // Function starts (leaders): the entry, the instruction after every `blr`
+        // (next function), and every `bl` call target (a called function entry).
+        // Discovering call targets is what lets the boot actually call its
+        // subroutines — splitting only on `blr` left most call targets unmapped.
+        let mut leaders: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        leaders.insert(lo);
+        for inst in &scanned {
+            let raw = inst.raw;
+            if raw == BLR {
+                let nxt = inst.address.wrapping_add(4);
+                if in_text(nxt) {
+                    leaders.insert(nxt);
+                }
             }
-            if cur_start.is_none() {
-                cur_start = Some(inst.address);
-                cur_bytes = 0;
-            }
-            cur_bytes += 4;
-            seen += 1;
-            if inst.raw == BLR {
-                functions.push(mk(cur_start.take().unwrap(), cur_bytes));
+            // bl: primary opcode 18, LK set, AA clear (relative call).
+            if (raw >> 26) == 18 && (raw & 1) == 1 && (raw >> 1) & 1 == 0 {
+                let disp = ((raw & 0x03FF_FFFC) as i32) << 6 >> 6;
+                let tgt = inst.address.wrapping_add(disp as u32);
+                if in_text(tgt) {
+                    leaders.insert(tgt);
+                }
             }
         }
-        // Close any trailing open function (no terminating blr within the budget).
-        if let Some(start) = cur_start {
-            if cur_bytes > 0 {
-                functions.push(mk(start, cur_bytes));
+
+        // Each function spans [leader, next_leader).
+        let starts: Vec<u32> = leaders.into_iter().collect();
+        let mut functions: Vec<FunctionInfo> = Vec::with_capacity(starts.len());
+        for (i, &start) in starts.iter().enumerate() {
+            if functions.len() >= max_funcs {
+                break;
+            }
+            let end = starts.get(i + 1).copied().unwrap_or(hi);
+            let size = end.wrapping_sub(start);
+            if size > 0 {
+                functions.push(mk(start, size));
             }
         }
 
         log::info!(
-            "Naive discovery: {} functions from entry 0x{:08X} ({} instructions scanned)",
+            "Naive discovery: {} functions from entry 0x{:08X} ({} instructions scanned, {} call targets)",
             functions.len(),
             entry,
-            seen
+            scanned.len(),
+            starts.len(),
         );
 
         GhidraAnalysis {

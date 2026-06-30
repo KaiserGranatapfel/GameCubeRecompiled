@@ -47,6 +47,9 @@ impl GameApp {
         // which the render loop then presents as the framebuffer.
         let entry = recompiled::ENTRY_POINT;
         info!("Running recompiled entry point 0x{:08X}...", entry);
+        if std::env::var("GCRECOMP_TRACE").is_ok() {
+            gcrecomp_core::runtime::enable_trace();
+        }
         // Give the recompiled boot code a few seconds, then stop it (it spins on
         // hardware we don't fully emulate). The window then shows the resulting XFB.
         gcrecomp_core::runtime::arm_watchdog(5);

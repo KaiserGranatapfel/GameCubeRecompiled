@@ -25,3 +25,25 @@ pub fn arm_watchdog(secs: u64) {
         STOP.store(true, Ordering::Relaxed);
     });
 }
+
+// --- Optional function-call trace (for debugging where boot diverges) ---
+use std::sync::atomic::AtomicU64;
+static TRACE: AtomicBool = AtomicBool::new(false);
+static TRACE_N: AtomicU64 = AtomicU64::new(0);
+
+/// Enable the call trace (logs the first few thousand function entries).
+pub fn enable_trace() {
+    TRACE.store(true, Ordering::Relaxed);
+}
+
+/// Called at the top of every generated function. No-op unless tracing is on.
+#[inline]
+pub fn trace_call(addr: u32) {
+    if !TRACE.load(Ordering::Relaxed) {
+        return;
+    }
+    let n = TRACE_N.fetch_add(1, Ordering::Relaxed);
+    if n < 5000 {
+        log::info!("TRACE[{n}] enter 0x{addr:08X}");
+    }
+}
